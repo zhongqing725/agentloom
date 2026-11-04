@@ -1,0 +1,10 @@
+node_modules
+dist
+data
+.env
+.env.local
+*.log
+.DS_Store
+.screens
+.dsh-office-*
+.edge-*
