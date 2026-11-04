@@ -140,6 +140,7 @@ pnpm dev
 | 3 分钟演示脚本 | [docs/demo-script.md](docs/demo-script.md) |
 | 技术架构 | [docs/architecture.md](docs/architecture.md) |
 | 白皮书源稿 | [docs/white-paper.md](docs/white-paper.md) |
+| 提交清单 | `deliverables/提交清单.md` |
 
 > 白皮书与 PPT 中的团队名称、成员姓名目前是 `【待填】` 占位，提交前替换为报名信息。
 > 演示数据为模拟整理，已在界面与文档中标注；真实模型成本需接入 DeepSeek 后复测。
