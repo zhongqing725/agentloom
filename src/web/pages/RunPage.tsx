@@ -1,25 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
   BadgeCheck,
-  Bot,
   Check,
   ChevronRight,
-  Clock3,
   Copy,
   Download,
   FileText,
   GitBranch,
   Loader2,
   Pause,
-  Play,
   RotateCcw,
   ShieldCheck,
   Sparkles,
   Terminal,
+  WifiOff,
   X,
 } from 'lucide-react'
 import { useApp } from '../App'
@@ -77,61 +74,155 @@ export default function RunPage() {
   const { id } = useParams<{ id: string }>()
   const { data } = useApp()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [detail, setDetail] = useState<Awaited<ReturnType<typeof api.getRun>> | null>(null)
   const [events, setEvents] = useState<RunEvent[]>([])
-  const [tab, setTab] = useState<Tab>(() => {
-    const requested = searchParams.get('tab')
-    return requested === 'report' || requested === 'ledger' || requested === 'verify' || requested === 'events' ? requested : 'graph'
-  })
-  const [selectedNode, setSelectedNode] = useState<NodeRun | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedClaim, setSelectedClaim] = useState(0)
   const [copied, setCopied] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [liveState, setLiveState] = useState<'connecting' | 'live' | 'reconnecting' | 'closed'>('connecting')
+  const [now, setNow] = useState(() => Date.now())
   const feedRef = useRef<HTMLDivElement>(null)
+  const detailRef = useRef(detail)
+  const loadSeq = useRef(0)
+  const stickToBottom = useRef(true)
 
-  const load = async () => {
+  const requestedTab = searchParams.get('tab')
+  const tab: Tab =
+    requestedTab === 'report' || requestedTab === 'ledger' || requestedTab === 'verify' || requestedTab === 'events'
+      ? requestedTab
+      : 'graph'
+  const focusNode = searchParams.get('node')
+  const runningNow = detail?.run.status === 'running' || detail?.run.status === 'queued'
+
+  const load = useCallback(async () => {
     if (!id) return
-    const next = await api.getRun(id)
-    setDetail(next)
-    setEvents((current) => {
-      const map = new Map(current.map((event) => [event.seq, event]))
-      for (const event of next.events) map.set(event.seq, event)
-      return [...map.values()].sort((a, b) => a.seq - b.seq)
-    })
-  }
+    const seq = ++loadSeq.current
+    try {
+      const next = await api.getRun(id)
+      if (seq !== loadSeq.current) return
+      setDetail(next)
+      setLoadError('')
+      setEvents((current) => {
+        const map = new Map(current.map((event) => [event.seq, event]))
+        for (const event of next.events) map.set(event.seq, event)
+        return [...map.values()].sort((a, b) => a.seq - b.seq)
+      })
+      if (next.run.status === 'completed' || next.run.status === 'failed' || next.run.status === 'cancelled') {
+        setLiveState('closed')
+      }
+    } catch (cause) {
+      if (seq === loadSeq.current) {
+        setLoadError(cause instanceof Error ? cause.message : '无法刷新运行状态')
+      }
+    }
+  }, [id])
+
+  useEffect(() => {
+    detailRef.current = detail
+  }, [detail])
+
+  useEffect(() => {
+    if (focusNode) setSelectedNodeId(focusNode)
+  }, [focusNode])
 
   useEffect(() => {
     if (!id) return
+    let alive = true
+    let refreshTimer: number | undefined
+    setLiveState('connecting')
     void load()
+
+    const scheduleLoad = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => {
+        if (alive) void load()
+      }, 140)
+    }
+
     const source = new EventSource(`/api/runs/${id}/events`)
+    source.onopen = () => {
+      if (!alive) return
+      setLiveState((current) => (current === 'closed' ? current : 'live'))
+    }
+    source.onerror = () => {
+      if (!alive) return
+      setLiveState((current) => (current === 'closed' ? current : 'reconnecting'))
+    }
     source.onmessage = (message) => {
       try {
         const event = JSON.parse(message.data) as RunEvent
-        setEvents((current) => (current.some((item) => item.seq === event.seq) ? current : [...current, event]))
+        setEvents((current) => {
+          if (current.some((item) => item.seq === event.seq)) return current
+          return [...current, event].sort((a, b) => a.seq - b.seq)
+        })
+
         if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.cancelled') {
           source.close()
+          setLiveState('closed')
           void load()
-        } else if (
+          return
+        }
+
+        if (
+          event.type === 'run.started' ||
+          event.type === 'node.queued' ||
+          event.type === 'node.started' ||
           event.type === 'node.completed' ||
           event.type === 'node.failed' ||
+          event.type === 'node.retry' ||
           event.type === 'loop.triggered' ||
           event.type === 'verify.failed' ||
           event.type === 'node.merge'
         ) {
-          void load()
+          scheduleLoad()
         }
       } catch {
         // ignore malformed SSE
       }
     }
-    return () => source.close()
-  }, [id])
+
+    const poll = window.setInterval(() => {
+      const status = detailRef.current?.run.status
+      if (status === 'running' || status === 'queued') {
+        void load()
+      } else if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        source.close()
+        setLiveState('closed')
+      }
+    }, 1800)
+
+    return () => {
+      alive = false
+      source.close()
+      window.clearInterval(poll)
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+    }
+  }, [id, load])
 
   useEffect(() => {
-    if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight
+    if (!runningNow) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [runningNow])
+
+  useEffect(() => {
+    if (stickToBottom.current && feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
   }, [events])
 
+  const selectTab = (next: Tab) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'graph') params.delete('tab')
+    else params.set('tab', next)
+    setSearchParams(params, { replace: true })
+  }
+
   const latest = useMemo(() => latestByNode(detail?.nodes ?? []), [detail])
+  const selectedNode = selectedNodeId ? latest.get(selectedNodeId) ?? null : null
   const statuses = useMemo(() => {
     const map = new Map<string, NodeStatusInfo>()
     if (!data) return map
@@ -145,14 +236,6 @@ export default function RunPage() {
     }
     return map
   }, [data, latest])
-
-  const focusNode = searchParams.get('node')
-
-  useEffect(() => {
-    if (!focusNode) return
-    const node = latest.get(focusNode)
-    if (node) setSelectedNode(node)
-  }, [focusNode, latest])
 
   const verifierRuns = useMemo(
     () => (detail?.nodes ?? []).filter((node) => node.nodeId === 'verifier').sort((a, b) => a.iteration - b.iteration),
@@ -185,7 +268,17 @@ export default function RunPage() {
     )
   }
 
-  const running = detail.run.status === 'running' || detail.run.status === 'queued'
+  const running = runningNow
+  const workflowNodes = data.workflow.graph.nodes
+  const completedCount = workflowNodes.filter((node) => latest.get(node.id)?.status === 'completed').length
+  const activeRuns = workflowNodes
+    .map((node) => latest.get(node.id))
+    .filter((nodeRun) => nodeRun?.status === 'running' || nodeRun?.status === 'queued')
+  const progress = workflowNodes.length > 0 ? Math.round((completedCount / workflowNodes.length) * 100) : 0
+  const elapsed = duration(
+    detail.run.startedAt,
+    detail.run.finishedAt ?? (running ? new Date(now).toISOString() : undefined),
+  )
 
   const copyReport = async () => {
     await navigator.clipboard.writeText(markdown)
@@ -194,9 +287,14 @@ export default function RunPage() {
   }
 
   const cancel = async () => {
-    if (!id) return
-    await api.cancelRun(id)
-    await load()
+    if (!id || cancelling) return
+    setCancelling(true)
+    try {
+      await api.cancelRun(id)
+      await load()
+    } finally {
+      setCancelling(false)
+    }
   }
 
   return (
@@ -219,21 +317,25 @@ export default function RunPage() {
           <p className="run-request">“{detail.run.input}”</p>
         </div>
         <div className="run-head-right">
-          <div className="run-metric">
-            <span>核查分</span>
-            <strong>{detail.run.score !== undefined ? Math.round(detail.run.score * 100) : '—'}<em>{detail.run.score !== undefined ? '%' : ''}</em></strong>
-          </div>
-          <div className="run-metric">
-            <span>耗时</span>
-            <strong>{duration(detail.run.startedAt, detail.run.finishedAt)}</strong>
-          </div>
-          <div className="run-metric">
-            <span>Tokens</span>
-            <strong>{detail.run.tokens.toLocaleString()}</strong>
+          <div className="run-metrics">
+            <div className="run-metric">
+              <span>核查分</span>
+              <strong>{detail.run.score !== undefined ? Math.round(detail.run.score * 100) : '—'}<em>{detail.run.score !== undefined ? '%' : ''}</em></strong>
+            </div>
+            <div className="run-metric">
+              <span>耗时</span>
+              <strong>{elapsed}</strong>
+            </div>
+            <div className="run-metric">
+              <span>Tokens</span>
+              <strong>{detail.run.tokens.toLocaleString()}</strong>
+            </div>
           </div>
           <div className="run-actions">
             {running ? (
-              <button className="btn btn-ghost" onClick={cancel}><Pause size={14} /> 取消</button>
+              <button className="btn btn-ghost" onClick={cancel} disabled={cancelling}>
+                <Pause size={14} /> {cancelling ? '取消中…' : '取消'}
+              </button>
             ) : (
               <button className="btn btn-ghost" onClick={() => navigate('/workflow')}><RotateCcw size={14} /> 再运行</button>
             )}
@@ -251,26 +353,50 @@ export default function RunPage() {
         </div>
       )}
 
-      <div className="run-tabs">
-        <button className={tab === 'graph' ? 'active' : ''} onClick={() => setTab('graph')}>
+      {running && (
+        <div className="run-live-strip" aria-live="polite">
+          <div className="run-live-copy">
+            <span className={`live-state ${liveState}`}>
+              <i />
+              {liveState === 'reconnecting' ? 'RECONNECTING' : liveState === 'connecting' ? 'CONNECTING' : 'LIVE'}
+            </span>
+            <span>
+              {activeRuns.length > 0
+                ? `${activeRuns.map((nodeRun) => nodeRun!.title).join('、')} 执行中`
+                : '调度器正在选择下一批节点'}
+            </span>
+            <span className="run-live-count">已完成 {completedCount} / {workflowNodes.length}</span>
+            <strong>{progress}%</strong>
+          </div>
+          <div className="run-progress"><span style={{ width: `${progress}%` }} /></div>
+        </div>
+      )}
+
+      <div className="run-tabs" role="tablist" aria-label="运行视图">
+        <button role="tab" aria-selected={tab === 'graph'} className={tab === 'graph' ? 'active' : ''} onClick={() => selectTab('graph')}>
           <GitBranch size={14} /> 执行图谱 <span>{detail.nodes.length}</span>
         </button>
-        <button className={tab === 'report' ? 'active' : ''} onClick={() => setTab('report')}>
+        <button role="tab" aria-selected={tab === 'report'} className={tab === 'report' ? 'active' : ''} onClick={() => selectTab('report')}>
           <FileText size={14} /> 研究报告
         </button>
-        <button className={tab === 'ledger' ? 'active' : ''} onClick={() => setTab('ledger')}>
+        <button role="tab" aria-selected={tab === 'ledger'} className={tab === 'ledger' ? 'active' : ''} onClick={() => selectTab('ledger')}>
           <BadgeCheck size={14} /> 证据账本
           {verdict?.claims?.length ? <span>{verdict.claims.length}</span> : null}
         </button>
-        <button className={tab === 'verify' ? 'active' : ''} onClick={() => setTab('verify')}>
+        <button role="tab" aria-selected={tab === 'verify'} className={tab === 'verify' ? 'active' : ''} onClick={() => selectTab('verify')}>
           <ShieldCheck size={14} /> 核查与回环
           {verifierRuns.length > 1 && <span className="tab-badge">{verifierRuns.length}</span>}
         </button>
-        <button className={tab === 'events' ? 'active' : ''} onClick={() => setTab('events')}>
+        <button role="tab" aria-selected={tab === 'events'} className={tab === 'events' ? 'active' : ''} onClick={() => selectTab('events')}>
           <Terminal size={14} /> 事件流 <span>{events.length}</span>
         </button>
         <div className="run-tabs-right">
-          {running && <span className="live-indicator"><i /> LIVE</span>}
+          {running && (
+            <span className={`live-indicator ${liveState}`}>
+              {liveState === 'reconnecting' ? <WifiOff size={11} /> : <i />}
+              {liveState === 'reconnecting' ? '重连中' : 'LIVE'}
+            </span>
+          )}
           {detail.run.mode === 'mock' && <Pill tone="amber">MOCK</Pill>}
         </div>
       </div>
@@ -287,8 +413,7 @@ export default function RunPage() {
                 readOnly
                 height={460}
                 onNodeClick={(nodeId) => {
-                  const node = latest.get(nodeId)
-                  if (node) setSelectedNode(node)
+                  if (latest.has(nodeId)) setSelectedNodeId(nodeId)
                 }}
               />
             </div>
@@ -298,17 +423,19 @@ export default function RunPage() {
                   <div className="eyebrow">EXECUTION TRACE</div>
                   <h2>节点轨迹</h2>
                 </div>
-                <span className="hint">点击节点查看输出与证据</span>
+                <span className="hint">
+                  {running ? `${completedCount}/${workflowNodes.length} 完成 · 点击节点看实时输出` : '点击节点查看输出与证据'}
+                </span>
               </div>
               <div className="timeline-list">
-                {(data.workflow.graph.nodes ?? []).map((node) => {
+                {workflowNodes.map((node) => {
                   const nodeRun = latest.get(node.id)
                   const status = nodeRun?.status ?? 'pending'
                   return (
                     <button
                       className={`timeline-row ${status}`}
                       key={node.id}
-                      onClick={() => nodeRun && setSelectedNode(nodeRun)}
+                      onClick={() => nodeRun && setSelectedNodeId(node.id)}
                     >
                       <span className={`timeline-dot ${status}`} />
                       <span className="timeline-name">
@@ -335,9 +462,19 @@ export default function RunPage() {
                 <div className="eyebrow">LIVE FEED</div>
                 <h2>调度事件</h2>
               </div>
-              <span className="pulse-dot" />
+              <span className={`feed-status ${running ? liveState : 'closed'}`}>
+                <i /> {running ? (liveState === 'reconnecting' ? '重连中' : 'LIVE') : '已归档'}
+              </span>
             </div>
-            <div className="event-feed" ref={feedRef}>
+            {loadError && <div className="feed-warning"><WifiOff size={12} /> {loadError}</div>}
+            <div
+              className="event-feed"
+              ref={feedRef}
+              onScroll={(event) => {
+                const target = event.currentTarget
+                stickToBottom.current = target.scrollHeight - target.scrollTop - target.clientHeight < 36
+              }}
+            >
               {events.map((event) => (
                 <div className={`feed-item feed-${event.type.replace(/\./g, '-')}`} key={event.seq}>
                   <span className="feed-time">{formatTime(event.ts)}</span>
@@ -346,6 +483,7 @@ export default function RunPage() {
                 </div>
               ))}
               {events.length === 0 && <div className="feed-empty">等待第一条调度事件…</div>}
+              {running && <div className="feed-empty feed-live-tail">正在接收下一个调度事件…</div>}
             </div>
           </aside>
         </div>
@@ -357,7 +495,7 @@ export default function RunPage() {
             <div className="report-toolbar">
               <div>
                 <div className="eyebrow">DELIVERABLE</div>
-                <strong>AI 眼镜产业链投资价值研究</strong>
+                <strong>{data.project.name} · 投资研究报告</strong>
               </div>
               <div className="report-toolbar-actions">
                 <button className="btn btn-ghost sm" onClick={copyReport}>
@@ -609,9 +747,13 @@ export default function RunPage() {
 
       <Modal
         open={Boolean(selectedNode)}
-        onClose={() => setSelectedNode(null)}
+        onClose={() => setSelectedNodeId(null)}
         title={selectedNode?.title ?? ''}
-        subtitle={selectedNode ? `${selectedNode.kind} · 第 ${selectedNode.iteration + 1} 轮 · ${selectedNode.tokens} tokens` : ''}
+        subtitle={
+          selectedNode
+            ? `${selectedNode.kind} · 第 ${selectedNode.iteration + 1} 轮 · ${selectedNode.tokens} tokens${selectedNode.status === 'running' ? ' · 实时更新中' : ''}`
+            : ''
+        }
         wide
       >
         {selectedNode && <NodeOutputView node={selectedNode} />}
