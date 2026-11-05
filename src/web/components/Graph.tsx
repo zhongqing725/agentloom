@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -17,6 +17,7 @@ import {
   type EdgeProps,
   type Node,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -42,6 +43,7 @@ type FlowNodeData = {
   pluginIds?: string[]
   pluginDefs?: PluginDef[]
   droppable?: boolean
+  connectable?: boolean
   onPluginDrop?: (pluginId: string) => void
   [key: string]: unknown
 }
@@ -75,7 +77,7 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
   return (
     <div
       className={cx(
-        'agent-node group relative flex w-[176px] overflow-hidden rounded-2xl border bg-background-primary-default shadow-card',
+        'agent-node group relative flex w-[160px] rounded-2xl border bg-background-primary-default shadow-card',
         'transition-[border-color,box-shadow] duration-150 hover:shadow-md',
         selected ? 'border-accent-500 ring-2 ring-accent-500/20' : 'border-border-button-default',
         status === 'running' && 'border-accent-500 ring-2 ring-accent-500/15',
@@ -106,8 +108,15 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
         if (pluginId) data.onPluginDrop?.(pluginId)
       }}
     >
-      {data.kind !== 'input' && <Handle type="target" position={Position.Left} className="canvas-handle" />}
-      <div className={cx('w-1 shrink-0', KIND_BAR[data.kind] ?? 'bg-accent-500')} aria-hidden />
+      {data.kind !== 'input' && (
+        <Handle
+          type="target"
+          position={Position.Left}
+          isConnectable={data.connectable !== false}
+          className={cx('canvas-handle', data.connectable === false && 'canvas-handle-idle')}
+        />
+      )}
+      <div className={cx('w-1 shrink-0 rounded-s-2xl', KIND_BAR[data.kind] ?? 'bg-accent-500')} aria-hidden />
       <div className="min-w-0 flex-1 px-3 py-2.5">
         <div className="flex items-center gap-1.5">
           <span className="grid size-6 shrink-0 place-items-center rounded-md bg-background-tertiary-default text-accent-600">
@@ -148,7 +157,14 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
           )}
         </div>
       </div>
-      {data.kind !== 'output' && <Handle type="source" position={Position.Right} className="canvas-handle" />}
+      {data.kind !== 'output' && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          isConnectable={data.connectable !== false}
+          className={cx('canvas-handle', data.connectable === false && 'canvas-handle-idle')}
+        />
+      )}
       {dragOver && (
         <span className="pointer-events-none absolute inset-1.5 z-20 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent-500 bg-background-primary-default/95 text-caption-1-semibold text-accent-700">
           <RiPlugLine className="size-4" aria-hidden /> 松开挂载
@@ -254,6 +270,7 @@ export function WorkflowGraph({
   onNodesDelete,
   onEdgesDelete,
   onPluginDrop,
+  focusNodeId,
   readOnly = false,
   height = 520,
 }: {
@@ -267,10 +284,12 @@ export function WorkflowGraph({
   onNodesDelete?: (nodeIds: string[]) => void
   onEdgesDelete?: (edgeIds: string[]) => void
   onPluginDrop?: (nodeId: string, pluginId: string) => void
+  focusNodeId?: string | null
   readOnly?: boolean
   height?: number
 }) {
   const narrow = useNarrowCanvas()
+  const flowRef = useRef<ReactFlowInstance<Node<FlowNodeData>, Edge<LoomEdgeData>> | null>(null)
   const initialNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return graph.nodes.map((node) => {
       const agent = node.data.agentId ? agents.find((item) => item.id === node.data.agentId) : undefined
@@ -290,6 +309,7 @@ export function WorkflowGraph({
           pluginIds,
           pluginDefs: pluginIds.map((id) => plugins.find((plugin) => plugin.id === id)).filter(Boolean) as PluginDef[],
           droppable: Boolean(agent) && !readOnly,
+          connectable: !readOnly,
           onPluginDrop: onPluginDrop ? (pluginId: string) => onPluginDrop(node.id, pluginId) : undefined,
         },
       }
@@ -347,6 +367,23 @@ export function WorkflowGraph({
     })
   }, [initialEdges, setEdges])
 
+  // When the desktop inspector opens over the canvas, pan the selected node
+  // left into the visible area instead of leaving it underneath the panel.
+  useEffect(() => {
+    if (!focusNodeId || narrow || !window.matchMedia('(min-width: 1024px)').matches) return
+    const instance = flowRef.current
+    const node = instance?.getNode(focusNodeId)
+    if (!instance || !node) return
+    const zoom = instance.getZoom()
+    const width = node.measured?.width ?? 160
+    const height = node.measured?.height ?? 120
+    const offset = 175 / zoom
+    instance.setCenter(node.position.x + width / 2 + offset, node.position.y + height / 2, {
+      zoom,
+      duration: 320,
+    })
+  }, [focusNodeId, narrow])
+
   return (
     <div className="agent-canvas" style={{ '--canvas-h': `${height}px` } as CSSProperties}>
       <ReactFlow
@@ -354,6 +391,9 @@ export function WorkflowGraph({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
+        onInit={(instance) => {
+          flowRef.current = instance
+        }}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id)}
@@ -369,7 +409,7 @@ export function WorkflowGraph({
         elementsSelectable
         fitView={!narrow}
         fitViewOptions={{ padding: 0.12, maxZoom: 1 }}
-        defaultViewport={narrow ? { x: 24, y: 44, zoom: 0.9 } : undefined}
+        defaultViewport={narrow ? { x: 8, y: 20, zoom: 0.62 } : undefined}
         minZoom={0.28}
         maxZoom={1.4}
         connectionRadius={32}

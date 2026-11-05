@@ -1,4 +1,4 @@
-import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
+import type { HTMLAttributes, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -121,29 +121,6 @@ export function StatusPill({ status, className }: { status: NodeStatus | string;
   )
 }
 
-/** Legacy compatibility while pages migrate to StatusPill and Badge. */
-export function Pill({ children, tone = 'muted' }: { children: ReactNode; tone?: string }) {
-  const tones: Record<string, string> = {
-    muted: 'bg-background-tertiary-default text-text-secondary',
-    green: 'bg-status-lime-background text-status-lime-text',
-    orange: 'bg-status-orange-background text-status-orange-text',
-    teal: 'bg-accent-100 text-accent-700',
-    purple: 'bg-background-tertiary-default text-text-secondary',
-    amber: 'bg-status-yellow-background text-status-yellow-text',
-    red: 'bg-status-rose-background text-status-rose-text',
-  }
-  return (
-    <span
-      className={cx(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-caption-1-semibold',
-        tones[tone] ?? tones.muted,
-      )}
-    >
-      {children}
-    </span>
-  )
-}
-
 export function ScoreRing({
   score,
   size = 86,
@@ -254,6 +231,11 @@ export function MarkdownView({ content, citations }: { content: string; citation
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          table: ({ children }) => (
+            <div className="my-4 overflow-x-auto">
+              <table>{children}</table>
+            </div>
+          ),
           a: ({ href, children }) => {
             if (href?.startsWith('#cite-')) {
               const id = href.replace('#cite-', '')
@@ -281,8 +263,4 @@ export function MarkdownView({ content, citations }: { content: string; citation
   )
 }
 
-export function onActivateKey(event: KeyboardEvent, action: () => void) {
-  if (event.key !== 'Enter' && event.key !== ' ') return
-  event.preventDefault()
-  action()
-}
+

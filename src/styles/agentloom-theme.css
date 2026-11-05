@@ -194,3 +194,17 @@ body {
 .report-prose strong {
   @apply font-semibold text-text-primary;
 }
+.report-prose pre {
+  @apply my-4 overflow-x-auto rounded-2xl bg-surface-sidebar p-4 text-caption-1-regular leading-relaxed text-text-on-sidebar;
+}
+.report-prose pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

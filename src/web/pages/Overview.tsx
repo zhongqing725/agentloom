@@ -64,7 +64,7 @@ export default function Overview() {
           <div className="text-caption-1-semibold uppercase tracking-[0.2em] text-accent-600">
             Multi-agent orchestration · 赛道一
           </div>
-          <h1 className="mt-4 max-w-3xl text-display-3-medium tracking-[-0.04em] text-text-primary sm:text-display-2-medium">
+          <h1 className="mt-4 max-w-3xl text-display-4-medium tracking-[-0.04em] text-text-primary sm:text-display-2-medium">
             把一支 Agent 团队，
             <br />
             织成<span className="text-accent-600">可验证</span>的执行流。
@@ -104,7 +104,7 @@ export default function Overview() {
                   <span className="w-6 shrink-0 font-mono text-caption-2-medium text-text-tertiary">
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: agent.color }} />
+                  <span className="size-2 shrink-0 rounded-full bg-accent-500" />
                   <div className="min-w-0 flex-1">
                     <div className="text-body-2-medium text-text-primary">{agent.name}</div>
                     <div className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">{agent.title}</div>
@@ -210,7 +210,7 @@ export default function Overview() {
                 <span className="w-5 shrink-0 font-mono text-caption-2-medium text-text-tertiary">
                   {String(index + 1).padStart(2, '0')}
                 </span>
-                <span className="size-1.5 shrink-0 rounded-full" style={{ backgroundColor: agent.color }} />
+                <span className="size-1.5 shrink-0 rounded-full bg-accent-500" />
                 <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">{agent.name}</span>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {agent.plugins.map((pluginId) => {

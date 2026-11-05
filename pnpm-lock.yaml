@@ -17,18 +17,12 @@ importers:
       '@remixicon/react':
         specifier: ^4.9.0
         version: 4.9.0(react@19.3.1)
-      '@tailwindcss/postcss':
-        specifier: ^4.3.4
-        version: 4.3.4
       '@xyflow/react':
         specifier: ^12.8.4
         version: 12.12.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       fastify:
         specifier: ^5.5.0
         version: 5.12.8
-      lucide-react:
-        specifier: ^0.542.0
-        version: 0.542.0(react@19.3.1)
       react:
         specifier: ^19.1.1
         version: 19.3.1
@@ -50,13 +44,13 @@ importers:
       tailwind-merge:
         specifier: ^3.7.0
         version: 3.7.0
-      tailwindcss:
-        specifier: ^4.3.4
-        version: 4.3.4
       zod:
         specifier: ^4.1.5
         version: 4.6.7
     devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.3.4
+        version: 4.3.4
       '@types/node':
         specifier: ^24.3.0
         version: 24.19.2
@@ -72,6 +66,9 @@ importers:
       concurrently:
         specifier: ^9.2.1
         version: 9.2.5
+      tailwindcss:
+        specifier: ^4.3.4
+        version: 4.3.4
       tsx:
         specifier: ^4.20.5
         version: 4.23.15
@@ -1171,11 +1168,6 @@ packages:
 
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
-
-  lucide-react@0.542.0:
-    resolution: {integrity: sha512-w3hD8/SQB7+lzU2r4VdFyzzOzKnUjTZIF/MQJGSSvni7Llewni4vuViRppfRAa2guOsY5k4jZyxw/i9DQHv+dw==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   magic-string@1.4.5:
     resolution: {integrity: sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w==}
@@ -2739,10 +2731,6 @@ snapshots:
   lru-cache@5.1.1:
     dependencies:
       yallist: 3.1.1
-
-  lucide-react@0.542.0(react@19.3.1):
-    dependencies:
-      react: 19.3.1
 
   magic-string@1.4.5:
     dependencies:

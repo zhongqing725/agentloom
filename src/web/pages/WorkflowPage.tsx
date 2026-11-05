@@ -505,7 +505,7 @@ export default function WorkflowPage() {
               <span className="inline-flex items-center gap-1.5"><span className="h-px w-3 border-t border-dashed border-accent-500" /> 回环</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto border-b border-separator-border bg-background-secondary-default px-4 py-2.5">
+          <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto border-b border-separator-border bg-background-secondary-default px-4 py-2.5">
             <span className="flex shrink-0 items-center gap-1.5 pe-1 text-caption-1-regular text-text-tertiary">
               <RiDraggable className="size-3.5" aria-hidden />
               {selectedAgent ? `点击挂载到「${selectedAgent.name}」` : '拖到节点，或先选中节点'}
@@ -549,6 +549,7 @@ export default function WorkflowPage() {
             onNodesDelete={(nodeIds) => void removeNodes(nodeIds)}
             onEdgesDelete={(edgeIds) => void removeEdges(edgeIds)}
             onPluginDrop={dropPlugin}
+            focusNodeId={selectedNode?.id ?? null}
             height={610}
           />
         </Surface>

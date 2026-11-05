@@ -423,7 +423,7 @@ export default function RunPage() {
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <div className="max-w-full overflow-x-auto">
+        <div className="hide-scrollbar max-w-full overflow-x-auto">
           <PillTabList className="rounded-2xl border border-separator-border bg-background-tertiary-default p-1">
             {TABS.map((item) => (
               <PillTab
@@ -720,7 +720,16 @@ export default function RunPage() {
                   <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Claim by claim</div>
                   <h2 className="mt-1.5 text-title-3-semibold text-text-primary">逐条核查</h2>
                 </div>
-                <Badge color={verdict?.passed ? 'primary' : 'neutral'}>{verdict?.passed ? 'Pass' : 'Review'}</Badge>
+                <span
+                  className={cx(
+                    'rounded-full px-2 py-0.5 text-caption-2-semibold',
+                    verdict?.passed
+                      ? 'bg-status-lime-background text-status-lime-text'
+                      : 'bg-status-orange-background text-status-orange-text',
+                  )}
+                >
+                  {verdict?.passed ? 'Pass' : 'Review'}
+                </span>
               </div>
               {(verdict?.routes?.length ?? 0) > 0 && (
                 <div className="mt-4 flex flex-col gap-1.5 rounded-2xl border border-accent-200 bg-accent-50 p-3">
