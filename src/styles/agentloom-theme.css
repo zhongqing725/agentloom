@@ -19,6 +19,13 @@
   --color-text-on-sidebar-muted: #9a9a9f;
   --color-text-on-sidebar-faint: #6e6e73;
   --color-surface-overlay: rgb(0 0 0 / 0.38);
+
+  --shadow-switch-on-sm: inset 0 1px 0 0 rgb(255 255 255 / 0.25), inset 0 0 0 0.5px var(--color-accent-500);
+  --shadow-switch-on-md: inset 0 1.5px 0 0 rgb(255 255 255 / 0.25), inset 0 0 0 0.75px var(--color-accent-500);
+  --shadow-switch-chip-sm: 0 2px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-switch-chip-md: 0 3px 3px 0 rgb(0 0 0 / 0.03);
+  --shadow-switch-chip-lg: 0 4px 4px 0 rgb(0 0 0 / 0.03);
+  --shadow-switch-thumb: 0 3px 3px 0 rgb(0 0 0 / 0.03), 0 0.75px 0 0 rgb(0 0 0 / 0.05);
 }
 
 :root {
@@ -29,6 +36,20 @@
   --font-inter: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
   --font-mono-source: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* Shared optical effects stay in the same theme as visible surfaces. */
+  --color-mask-opaque: #000;
+  --color-tooltip-caret-shadow: rgb(0 0 0 / 0.05);
+  --color-glass-rim-highlight: rgb(255 255 255 / 0.9);
+  --color-glass-rim-shade: rgb(0 0 0 / 0.14);
+  --color-glass-rim-dim: rgb(255 255 255 / 0.1);
+  --color-glass-rim-bounce: rgb(255 255 255 / 0.55);
+  --color-skeleton-line: rgb(255 255 255 / 0.9);
+  --color-skeleton-glow: rgb(255 255 255 / 0.55);
+  --color-skeleton-bloom: rgb(255 255 255 / 0.35);
+  --color-skeleton-line-dark: rgb(255 255 255 / 0.2);
+  --color-skeleton-glow-dark: rgb(255 255 255 / 0.08);
+  --color-skeleton-bloom-dark: rgb(255 255 255 / 0.04);
 
   /* Copper accent ramp — single accent, all interactive states derive here. */
   --color-accent-50: color-mix(in srgb, #b56245 5%, white);
@@ -98,11 +119,6 @@
     0 18px 48px rgb(0 0 0 / 0.16);
 }
 
-/* Apple-like press: darken only, never scale. */
-.button-press-motion:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: none;
-}
-
 /* App page entrance: 4px rise + 2px blur, removed after the animation so it
  * never creates a containing block for fixed overlays. */
 @keyframes app-page-enter {
@@ -123,8 +139,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-page {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }
 

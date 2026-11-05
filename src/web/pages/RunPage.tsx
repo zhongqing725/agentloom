@@ -26,15 +26,15 @@ import type { Citation, NodeRun, RunEvent } from '../../shared/types'
 import { Badge } from '@/components/base/badges/badge'
 import { Button, ButtonLink } from '@/components/base/buttons/button'
 import { Spinner } from '@/components/base/spinner/spinner'
-import { PillTab, PillTabList } from '@/components/base/tabs/pill-tab'
+import { Tab, TabList, TabPanel, Tabs } from '@/components/base/tabs/tabs'
 import { cx } from '@/utils/cx'
 import { MarkdownView, Modal, ScoreRing, StatusPill, Surface } from '../components/ui'
 import { WorkflowGraph, type NodeStatusInfo } from '../components/Graph'
 
-type Tab = 'graph' | 'report' | 'ledger' | 'verify' | 'events'
+type RunTab = 'graph' | 'report' | 'ledger' | 'verify' | 'events'
 
 const TABS: Array<{
-  key: Tab
+  key: RunTab
   label: string
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
 }> = [
@@ -105,26 +105,28 @@ export default function RunPage() {
   const feedRef = useRef<HTMLDivElement>(null)
   const detailRef = useRef(detail)
   const loadSeq = useRef(0)
+  const activeRunId = useRef<string | undefined>(id)
   const stickToBottom = useRef(true)
 
   const requestedTab = searchParams.get('tab')
-  const tab: Tab =
+  const tab: RunTab =
     requestedTab === 'report' || requestedTab === 'ledger' || requestedTab === 'verify' || requestedTab === 'events'
       ? requestedTab
       : 'graph'
   const focusNode = searchParams.get('node')
-  const runningNow = detail?.run.status === 'running' || detail?.run.status === 'queued'
+  const runningNow = detail?.run.id === id && (detail?.run.status === 'running' || detail?.run.status === 'queued')
 
   const load = useCallback(async () => {
-    if (!id) return
+    if (!id || activeRunId.current !== id) return
     const seq = ++loadSeq.current
     try {
       const next = await api.getRun(id)
-      if (seq !== loadSeq.current) return
+      if (seq !== loadSeq.current || activeRunId.current !== id) return
       setDetail(next)
       setLoadError('')
       setEvents((current) => {
-        const map = new Map(current.map((event) => [event.seq, event]))
+        if (activeRunId.current !== id) return current
+        const map = new Map(current.filter((event) => event.runId === id).map((event) => [event.seq, event]))
         for (const event of next.events) map.set(event.seq, event)
         return [...map.values()].sort((a, b) => a.seq - b.seq)
       })
@@ -132,7 +134,7 @@ export default function RunPage() {
         setLiveState('closed')
       }
     } catch (cause) {
-      if (seq === loadSeq.current) {
+      if (seq === loadSeq.current && activeRunId.current === id) {
         setLoadError(cause instanceof Error ? cause.message : '无法刷新运行状态')
       }
     }
@@ -143,13 +145,22 @@ export default function RunPage() {
   }, [detail])
 
   useEffect(() => {
-    if (focusNode) setSelectedNodeId(focusNode)
-  }, [focusNode])
-
-  useEffect(() => {
     if (!id) return
     let alive = true
     let refreshTimer: number | undefined
+    activeRunId.current = id
+    // React Router reuses this page between runs. Drop the previous run's
+    // selection and stream before loading a new one (sequence IDs are local).
+    detailRef.current = null
+    stickToBottom.current = true
+    setDetail(null)
+    setEvents([])
+    setSelectedNodeId(null)
+    setSelectedClaim(0)
+    setCopied(false)
+    setCancelling(false)
+    setLoadError('')
+    setNow(Date.now())
     setLiveState('connecting')
     void load()
 
@@ -170,9 +181,12 @@ export default function RunPage() {
       setLiveState((current) => (current === 'closed' ? current : 'reconnecting'))
     }
     source.onmessage = (message) => {
+      if (!alive) return
       try {
         const event = JSON.parse(message.data) as RunEvent
+        if (event.runId !== id) return
         setEvents((current) => {
+          if (!alive) return current
           if (current.some((item) => item.seq === event.seq)) return current
           return [...current, event].sort((a, b) => a.seq - b.seq)
         })
@@ -203,6 +217,7 @@ export default function RunPage() {
     }
 
     const poll = window.setInterval(() => {
+      if (!alive) return
       const status = detailRef.current?.run.status
       if (status === 'running' || status === 'queued') {
         void load()
@@ -214,11 +229,18 @@ export default function RunPage() {
 
     return () => {
       alive = false
+      activeRunId.current = undefined
+      // Invalidate pending getRun responses, including an old cancel's refresh.
+      loadSeq.current += 1
       source.close()
       window.clearInterval(poll)
       if (refreshTimer) window.clearTimeout(refreshTimer)
     }
   }, [id, load])
+
+  useEffect(() => {
+    if (focusNode) setSelectedNodeId(focusNode)
+  }, [id, focusNode])
 
   useEffect(() => {
     if (!runningNow) return
@@ -232,7 +254,7 @@ export default function RunPage() {
     }
   }, [events])
 
-  const selectTab = (next: Tab) => {
+  const selectTab = (next: RunTab) => {
     const params = new URLSearchParams(searchParams)
     if (next === 'graph') params.delete('tab')
     else params.set('tab', next)
@@ -277,7 +299,7 @@ export default function RunPage() {
   const activeClaim = ledgerClaims[Math.min(selectedClaim, Math.max(0, ledgerClaims.length - 1))]
   const activeCitation = activeClaim?.citation ? citations.find((item) => item.id === activeClaim.citation) : undefined
 
-  if (!data || !detail) {
+  if (!data || !detail || detail.run.id !== id) {
     return (
       <div className="flex min-h-[60dvh] items-center justify-center gap-3 text-body-regular text-text-secondary">
         <Spinner size="sm" aria-label="正在装载运行轨迹" />
@@ -300,8 +322,11 @@ export default function RunPage() {
 
   const copyReport = async () => {
     await navigator.clipboard.writeText(markdown)
+    if (activeRunId.current !== id) return
     setCopied(true)
-    setTimeout(() => setCopied(false), 1600)
+    setTimeout(() => {
+      if (activeRunId.current === id) setCopied(false)
+    }, 1600)
   }
 
   const cancel = async () => {
@@ -311,11 +336,11 @@ export default function RunPage() {
       await api.cancelRun(id)
       await load()
     } finally {
-      setCancelling(false)
+      if (activeRunId.current === id) setCancelling(false)
     }
   }
 
-  const tabCount: Record<Tab, number | undefined> = {
+  const tabCount: Record<RunTab, number | undefined> = {
     graph: detail.nodes.length,
     report: undefined,
     ledger: verdict?.claims?.length,
@@ -422,24 +447,22 @@ export default function RunPage() {
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <Tabs selectedKey={tab} onSelectionChange={(key) => selectTab(key as RunTab)} className="mt-5 gap-0">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="hide-scrollbar max-w-full overflow-x-auto">
-          <PillTabList className="rounded-2xl border border-separator-border bg-background-tertiary-default p-1">
+          <TabList aria-label="运行详情视图" variant="segmented">
             {TABS.map((item) => (
-              <PillTab
+              <Tab
                 key={item.key}
-                variant="blue"
+                id={item.key}
+                variant="segmented"
                 icon={item.icon}
-                isSelected={tab === item.key}
-                onSelect={() => selectTab(item.key)}
+                count={tabCount[item.key]}
               >
                 {item.label}
-                {tabCount[item.key] !== undefined && (
-                  <span className="ms-1 font-mono text-caption-2-medium opacity-70">{tabCount[item.key]}</span>
-                )}
-              </PillTab>
+              </Tab>
             ))}
-          </PillTabList>
+          </TabList>
         </div>
         <div className="ms-auto hidden items-center gap-2 sm:flex">
           {running && (
@@ -452,7 +475,7 @@ export default function RunPage() {
         </div>
       </div>
 
-      {tab === 'graph' && (
+      <TabPanel id="graph">
         <div className="mt-4 flex flex-col gap-4">
           <Surface className="overflow-hidden p-0">
             <WorkflowGraph
@@ -544,9 +567,9 @@ export default function RunPage() {
             </Surface>
           </div>
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'report' && (
+      <TabPanel id="report">
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           <Surface className="overflow-hidden p-0">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-separator-border px-5 py-4">
@@ -596,9 +619,9 @@ export default function RunPage() {
             </div>
           </Surface>
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'ledger' && (
+      <TabPanel id="ledger">
         <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <Surface className="overflow-hidden p-0">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-separator-border px-5 py-5">
@@ -696,9 +719,9 @@ export default function RunPage() {
             </div>
           </Surface>
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'verify' && (
+      <TabPanel id="verify">
         <div className="mt-4 flex flex-col gap-4">
           <Surface className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
             <div>
@@ -797,9 +820,9 @@ export default function RunPage() {
             </Surface>
           </div>
         </div>
-      )}
+      </TabPanel>
 
-      {tab === 'events' && (
+      <TabPanel id="events">
         <Surface className="mt-4 overflow-hidden p-0">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-separator-border px-5 py-4">
             <div>
@@ -825,7 +848,8 @@ export default function RunPage() {
             </div>
           </div>
         </Surface>
-      )}
+      </TabPanel>
+      </Tabs>
 
       <Modal
         open={Boolean(selectedNode)}

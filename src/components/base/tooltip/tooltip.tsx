@@ -1,7 +1,8 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import { Children, isValidElement, type ComponentProps, type ReactNode } from "react";
 import {
+  Focusable,
   OverlayArrow as AriaOverlayArrow,
   Tooltip as AriaTooltip,
   TooltipTrigger as AriaTooltipTrigger,
@@ -29,8 +30,8 @@ import { useDirection } from "@/components/foundations/direction/direction";
  *     <Tooltip size="md">Helpful copy</Tooltip>
  *   </TooltipTrigger>
  *
- * The trigger's single child must be focusable (react-aria `Button`, or any
- * component built on `useFocusable`).
+ * The first child is the trigger. Focusable bridges React Aria's hover/focus
+ * context to BoardUI's native buttons, which forward their ref and props.
  * BoardUI opens and begins closing immediately. The tooltip surface itself is
  * non-interactive, so moving off the trigger never keeps it open and tooltip
  * copy cannot be selected accidentally.
@@ -85,15 +86,15 @@ export function Tooltip({ children, className, size = "sm", showArrow = true, of
       {...props}
       className={(state) =>
         cx(
-          "pointer-events-none z-120 max-w-[240px] select-none rounded-lg border border-border-button-default bg-background-primary-default text-text-primary shadow-dropdown",
+          "pointer-events-none z-120 max-w-[240px] select-none rounded-2lg border border-border-button-default bg-background-primary-default text-text-primary shadow-dropdown",
           sizes[size],
           // Blur + scale in/out. react-aria stamps `data-entering` on mount then
           // removes it (transition to base), and holds the element mounted while
           // `data-exiting` is set so the same transition plays in reverse. The
           // `transition` utility covers scale, filter (blur) and opacity.
-          "transition duration-200 ease-out",
-          "data-[entering]:scale-90 data-[entering]:opacity-0 data-[entering]:blur-[4px]",
-          "data-[exiting]:scale-90 data-[exiting]:opacity-0 data-[exiting]:blur-[4px]",
+          "transition duration-150 ease-out",
+          "data-[entering]:opacity-0 motion-safe:data-[entering]:scale-90 motion-safe:data-[entering]:blur-[4px]",
+          "data-[exiting]:opacity-0 motion-safe:data-[exiting]:scale-90 motion-safe:data-[exiting]:blur-[4px]",
           typeof className === "function" ? className(state) : className,
         )
       }
@@ -110,7 +111,7 @@ export function Tooltip({ children, className, size = "sm", showArrow = true, of
                 height={caret.height}
                 viewBox={`0 0 ${caret.width} ${caret.height}`}
                 className="block overflow-visible fill-background-primary-default stroke-border-button-default"
-                style={{ filter: `drop-shadow(${caret.shadow} rgb(0 0 0 / 0.05))` }}
+                style={{ filter: `drop-shadow(${caret.shadow} var(--color-tooltip-caret-shadow))` }}
               >
                 <path d={caret.path} />
               </svg>
@@ -125,6 +126,12 @@ export function Tooltip({ children, className, size = "sm", showArrow = true, of
 
 export type TooltipTriggerProps = ComponentProps<typeof AriaTooltipTrigger>;
 
-export function TooltipTrigger({ delay = 0, closeDelay = 0, ...props }: TooltipTriggerProps) {
-  return <AriaTooltipTrigger delay={delay} closeDelay={closeDelay} {...props} />;
+export function TooltipTrigger({ children, delay = 0, closeDelay = 0, ...props }: TooltipTriggerProps) {
+  const [trigger, ...content] = Children.toArray(children);
+  return (
+    <AriaTooltipTrigger delay={delay} closeDelay={closeDelay} {...props}>
+      {isValidElement(trigger) ? <Focusable>{trigger as ComponentProps<typeof Focusable>["children"]}</Focusable> : trigger}
+      {content}
+    </AriaTooltipTrigger>
+  );
 }

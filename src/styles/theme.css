@@ -46,16 +46,15 @@
 
   /* ----- Typography ----------------------------------------------------------
    * Font sizes, weights, line-heights, and tracking all match Tailwind v4
-   * defaults. The only override is the family: Inter, loaded via next/font
-   * in app/layout.tsx, which exposes --font-inter to the document.
+   * defaults. AgentLoom supplies the system font stack through --font-inter
+   * in agentloom-theme.css; no network font loader is required.
    * --------------------------------------------------------------------------*/
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif,
                "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
                "Noto Color Emoji";
 
-  /* Monospace ramp for code blocks. Loaded via next/font in app/layout.tsx
-   * (--font-mono-source → JetBrains Mono). Figma's spec uses IBM Plex Mono;
-   * JetBrains Mono is the closest already-bundled face. */
+  /* Monospace ramp for code blocks. The product theme supplies the local
+   * --font-mono-source stack alongside the interface font. */
   --font-mono: var(--font-mono-source), ui-monospace, "SFMono-Regular", Menlo,
                Consolas, "Liberation Mono", monospace;
 
@@ -857,30 +856,26 @@
   --input-transition-ms:  150ms;
 }
 
-/* Keep color feedback quick while the physical press motion remains soft.
- * The transform uses a shorter duration on press and the slower duration only
- * when returning to rest, so hover styles never inherit the 700ms timing. */
+/* AgentLoom presses darken in place; geometry never scales on interaction. */
 @utility button-press-motion {
   transition:
     background-color var(--button-transition-ms) ease,
     border-color var(--button-transition-ms) ease,
     box-shadow var(--button-transition-ms) ease,
     color var(--button-transition-ms) ease,
-    transform 420ms cubic-bezier(0.4, 0, 0.2, 1);
+    filter var(--button-transition-ms) ease;
 
   &:active:not(:disabled):not([aria-disabled="true"]) {
-    transform: scale(0.98);
-    transition-duration: 150ms, 150ms, 150ms, 150ms, 220ms;
+    filter: brightness(0.94);
   }
 
   &:disabled,
   &[aria-disabled="true"] {
-    transform: none;
+    filter: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
     transition: none;
-    transform: none;
   }
 }
 

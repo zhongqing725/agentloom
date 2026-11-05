@@ -54,7 +54,7 @@ import { cx, sortCx } from "@/utils/cx";
  * `AlertDialog` is the destructive-confirm preset: role="alertdialog", no
  * backdrop dismissal, focus starts on Cancel.
  *
- * Surface and motion follow Settings Modal: black/70 backdrop fading over
+ * Surface and motion follow Settings Modal: semantic overlay fading over
  * 300ms; the panel fades and sharpens from scale 0.85 and a 4px blur over
  * 300ms on the iOS sheet curve, and plays the same transition in reverse
  * before it unmounts. Reduced motion keeps the fade and drops the scale and
@@ -68,7 +68,7 @@ export type ModalSize = "sm" | "md" | "lg" | "xl";
 const styles = sortCx({
   overlay: "group/modal fixed inset-x-0 top-0 z-100 flex h-(--visual-viewport-height) items-center justify-center p-4 sm:p-6",
   backdrop: [
-    "absolute inset-0 bg-black/70",
+    "absolute inset-0 bg-surface-overlay",
     "transition-opacity duration-300 ease-out",
     "group-data-[entering]/modal:opacity-0 group-data-[exiting]/modal:opacity-0",
   ].join(" "),
@@ -150,6 +150,8 @@ export interface ModalProps extends Omit<ModalOverlayProps, "children" | "classN
   className?: string;
   /** Classes on the full-screen overlay, e.g. to align the panel to the top. */
   overlayClassName?: string;
+  /** Classes on the modal's sizing and motion wrapper. */
+  panelClassName?: string;
   children: ReactNode | ((renderProps: DialogRenderProps) => ReactNode);
 }
 
@@ -159,6 +161,7 @@ export function Modal({
   "aria-label": ariaLabel,
   className,
   overlayClassName,
+  panelClassName,
   isDismissable = true,
   children,
   ...props
@@ -168,7 +171,7 @@ export function Modal({
   return (
     <AriaModalOverlay {...props} dir={direction} isDismissable={isDismissable} className={cx(styles.overlay, overlayClassName)}>
       <div aria-hidden className={styles.backdrop} />
-      <AriaModal className={cx(styles.modal, styles.size[size])}>
+      <AriaModal className={cx(styles.modal, styles.size[size], panelClassName)}>
         <ModalDialog role={role} aria-label={ariaLabel} className={className}>
           {children}
         </ModalDialog>

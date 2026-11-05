@@ -8,7 +8,7 @@ import { cx } from "@/utils/cx";
  * Spinner — an orbiting light for work of unknown length.
  *
  *   <Spinner />                                  // 20px, accent
- *   <Spinner size="sm" className="text-white" /> // inside a primary button
+ *   <Spinner size="sm" className="text-text-white" /> // inside a primary button
  *
  * The light is drawn the way Composer Loader draws its band: the same arc
  * at three scales, a crisp line with a rounded head, a tight glow and a wide
@@ -19,8 +19,8 @@ import { cx } from "@/utils/cx";
  *
  * Announced as an indeterminate progress bar labelled "Loading" (override
  * with `aria-label`). Pass `aria-hidden` where the surrounding control
- * already says it is busy, e.g. a pending button. Reduced motion slows the
- * orbit rather than stopping it: the motion is the message.
+ * already says it is busy, e.g. a pending button. Reduced motion retains a
+ * static indicator and its accessible loading label.
  */
 
 export type SpinnerSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -60,7 +60,7 @@ function Arc({
   const outer = center + width / 2;
   // The wrapper is grown to hold the ring plus its blur, so nothing clips.
   const bleed = Math.max(0, outer + blur * 2 - box / 2);
-  const ring = `radial-gradient(circle, transparent ${inner}px, #000 ${inner + 0.5}px, #000 ${outer - 0.5}px, transparent ${outer}px)`;
+  const ring = `radial-gradient(circle, transparent ${inner}px, var(--color-mask-opaque) ${inner + 0.5}px, var(--color-mask-opaque) ${outer - 0.5}px, transparent ${outer}px)`;
   const style: CSSProperties = {
     inset: -bleed,
     filter: blur > 0 ? `blur(${blur}px)` : undefined,
@@ -90,7 +90,7 @@ export interface SpinnerProps {
   "aria-label"?: string;
   /** Hide it from assistive technology when a parent already announces the wait. */
   "aria-hidden"?: boolean;
-  /** Colour comes from the text colour, e.g. `text-white`. Default accent. */
+  /** Colour comes from the text colour, e.g. `text-text-white`. Default accent. */
   className?: string;
 }
 
@@ -105,7 +105,7 @@ export function SpinnerGlyph({ size = "md", track = true, className }: Omit<Spin
       {track ? (
         <span className="absolute inset-0 rounded-full border-current opacity-15" style={{ borderWidth: line }} />
       ) : null}
-      <span className="absolute inset-0 animate-spin [animation-duration:900ms] motion-reduce:[animation-duration:2400ms]">
+      <span className="absolute inset-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none">
         <Arc box={box} line={line} width={line * 4} blur={line * 1.6} opacity={0.32} arc={110} lag={22} />
         <Arc box={box} line={line} width={line * 2} blur={line * 0.6} opacity={0.6} arc={200} lag={9} />
         <Arc box={box} line={line} width={line} blur={0} opacity={1} arc={290} lag={0} />

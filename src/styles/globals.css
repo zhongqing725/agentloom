@@ -275,24 +275,24 @@ input[type="search"]::-webkit-search-cancel-button {
   padding: var(--lg-rim-width, 1.5px);
   background: conic-gradient(
     from var(--lg-rim-angle, 0deg),
-    var(--lg-rim-hi, rgb(255 255 255 / 0.9)) 0deg,
-    var(--lg-rim-sh, rgb(0 0 0 / 0.14)) 70deg,
-    var(--lg-rim-dim, rgb(255 255 255 / 0.1)) 140deg,
-    var(--lg-rim-bounce, rgb(255 255 255 / 0.55)) 180deg,
-    var(--lg-rim-dim, rgb(255 255 255 / 0.1)) 220deg,
-    var(--lg-rim-sh, rgb(0 0 0 / 0.14)) 290deg,
-    var(--lg-rim-hi, rgb(255 255 255 / 0.9)) 360deg
+    var(--lg-rim-hi, var(--color-glass-rim-highlight)) 0deg,
+    var(--lg-rim-sh, var(--color-glass-rim-shade)) 70deg,
+    var(--lg-rim-dim, var(--color-glass-rim-dim)) 140deg,
+    var(--lg-rim-bounce, var(--color-glass-rim-bounce)) 180deg,
+    var(--lg-rim-dim, var(--color-glass-rim-dim)) 220deg,
+    var(--lg-rim-sh, var(--color-glass-rim-shade)) 290deg,
+    var(--lg-rim-hi, var(--color-glass-rim-highlight)) 360deg
   );
   /* Shorthands first, composites last: `-webkit-mask` aliases `mask` in
    * Chromium, so a shorthand placed after a composite silently resets it to
    * `add` — and an un-composited mask paints the full conic wash over the
    * button instead of a ring. */
   -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--color-mask-opaque) 0 0) content-box,
+    linear-gradient(var(--color-mask-opaque) 0 0);
   mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--color-mask-opaque) 0 0) content-box,
+    linear-gradient(var(--color-mask-opaque) 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   opacity: var(--lg-rim-o, 1);
@@ -937,17 +937,17 @@ input[type="search"]::-webkit-search-cancel-button {
  * Position comes from the component's classes (relative or absolute): an
  * unlayered position here would beat Tailwind's layered utilities. */
 .bui-skeleton {
-  --bui-skeleton-line: rgb(255 255 255 / 0.9);
-  --bui-skeleton-glow: rgb(255 255 255 / 0.55);
-  --bui-skeleton-bloom: rgb(255 255 255 / 0.35);
+  --bui-skeleton-line: var(--color-skeleton-line);
+  --bui-skeleton-glow: var(--color-skeleton-glow);
+  --bui-skeleton-bloom: var(--color-skeleton-bloom);
   overflow: hidden;
   isolation: isolate;
 }
 
 .dark .bui-skeleton {
-  --bui-skeleton-line: rgb(255 255 255 / 0.2);
-  --bui-skeleton-glow: rgb(255 255 255 / 0.08);
-  --bui-skeleton-bloom: rgb(255 255 255 / 0.04);
+  --bui-skeleton-line: var(--color-skeleton-line-dark);
+  --bui-skeleton-glow: var(--color-skeleton-glow-dark);
+  --bui-skeleton-bloom: var(--color-skeleton-bloom-dark);
 }
 
 .bui-skeleton::after {
@@ -1014,7 +1014,7 @@ input[type="search"]::-webkit-search-cancel-button {
 }
 
 .dark .landing-showcase-card::after {
-  border-color: rgb(255 255 255 / 0.08);
+  border-color: var(--color-separator-sidebar);
 }
 
 @media (min-width: 640px) and (hover: hover) {

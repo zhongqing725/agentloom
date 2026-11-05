@@ -62,17 +62,19 @@ export function Tabs({ className, ref, ...props }: TabsProps) {
 }
 
 export interface TabListProps<T extends object> extends AriaTabListProps<T> {
+  variant?: "underline" | "segmented";
   ref?: Ref<HTMLDivElement>;
 }
 
 type Underline = { left: number; width: number };
 
-export function TabList<T extends object>({ className, ref, ...props }: TabListProps<T>) {
+export function TabList<T extends object>({ variant = "underline", className, ref, ...props }: TabListProps<T>) {
   const direction = useDirection();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [underline, setUnderline] = useState<Underline | null>(null);
 
   useIsomorphicLayoutEffect(() => {
+    if (variant !== "underline") return;
     const el = wrapperRef.current;
     if (!el) return;
     const measure = () => {
@@ -93,7 +95,7 @@ export function TabList<T extends object>({ className, ref, ...props }: TabListP
       mo.disconnect();
       ro.disconnect();
     };
-  }, [direction]);
+  }, [direction, variant]);
 
   return (
     <div ref={wrapperRef} className="relative w-full">
@@ -102,15 +104,18 @@ export function TabList<T extends object>({ className, ref, ...props }: TabListP
         {...props}
         className={(state) =>
           cx(
-            "flex w-full items-center gap-1 border-b border-separator-border",
+            "flex items-center gap-1",
+            variant === "segmented"
+              ? "w-max rounded-2xl border border-separator-border bg-segmented-control-background p-1"
+              : "w-full border-b border-separator-border",
             typeof className === "function" ? className(state) : className,
           )
         }
       />
-      {underline && (
+      {variant === "underline" && underline && (
         <span
           aria-hidden
-          className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-accent-600 transition-[transform,width] duration-200 ease"
+          className="pointer-events-none absolute bottom-0 left-0 h-0.5 bg-accent-600 transition-[transform,width] duration-200 ease motion-reduce:transition-none"
           style={{
             transform: `translateX(${underline.left}px)`,
             width: underline.width,
@@ -122,6 +127,7 @@ export function TabList<T extends object>({ className, ref, ...props }: TabListP
 }
 
 export interface TabProps extends Omit<AriaTabProps, "children"> {
+  variant?: "underline" | "segmented";
   children?: ReactNode;
   /** Optional leading icon (16px). Inherits the label color. */
   icon?: IconComponent;
@@ -130,7 +136,7 @@ export interface TabProps extends Omit<AriaTabProps, "children"> {
   ref?: Ref<HTMLDivElement>;
 }
 
-export function Tab({ className, children, icon: Icon, count, ref, ...props }: TabProps) {
+export function Tab({ variant = "underline", className, children, icon: Icon, count, ref, ...props }: TabProps) {
   return (
     <AriaTab
       ref={ref}
@@ -140,6 +146,10 @@ export function Tab({ className, children, icon: Icon, count, ref, ...props }: T
           "relative inline-flex cursor-pointer items-center gap-2.5 px-2.5 py-2 whitespace-nowrap",
           "outline-none transition-colors duration-150 ease",
           "focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+          variant === "segmented" && "rounded-2lg focus-visible:rounded-2lg motion-reduce:transition-none",
+          variant === "segmented" && (state.isSelected
+            ? "bg-segmented-control-selected-background shadow-xs"
+            : "hover:bg-background-primary-hover"),
           state.isDisabled && "cursor-not-allowed opacity-50",
           typeof className === "function" ? className(state) : className,
         )
@@ -164,7 +174,7 @@ export function Tab({ className, children, icon: Icon, count, ref, ...props }: T
                 "inline-flex items-center justify-center rounded-sm px-1 py-px text-caption-1-medium whitespace-nowrap",
                 isSelected
                   ? "bg-tab-count-selected-background text-accent-600"
-                  : "bg-black/10 text-text-primary opacity-50",
+                  : "bg-segmented-control-background text-text-primary opacity-50",
               )}
             >
               {count}

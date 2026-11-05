@@ -86,8 +86,8 @@ const styles = sortCx({
   // Base shape per size (used when label is present OR medium icon-only).
   size: {
     medium: "h-9 rounded-2lg p-2 text-body-medium",
-    small:  "h-8 rounded-lg px-2 py-1.5 text-body-medium",
-    xs:     "h-6 rounded-sm px-2 text-caption-1-semibold",
+    small:  "h-8 rounded-2lg px-2 py-1.5 text-body-medium",
+    xs:     "h-6 rounded-2lg px-2 text-caption-1-semibold",
   },
 
   // Icon-only override:

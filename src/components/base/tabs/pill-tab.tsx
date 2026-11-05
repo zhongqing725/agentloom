@@ -125,7 +125,7 @@ export function PillTabList({ children, className, ref, ...props }: PillTabListP
           aria-hidden
           className={cx(
             "pointer-events-none absolute left-0 top-0",
-            "transition-[transform,width,height] duration-300",
+            "transition-[transform,width,height] duration-150 motion-reduce:transition-none",
             "[transition-timing-function:cubic-bezier(0.34,1.2,0.64,1)]",
             styles.radius[thumb.variant],
             styles.thumb[thumb.variant],
@@ -176,7 +176,7 @@ export function PillTab({
         aria-hidden
         className={cx(
           "pointer-events-none absolute inset-0 opacity-0",
-          "transition-opacity duration-200 ease-out",
+          "transition-opacity duration-150 ease-out",
           styles.radius[variant],
           styles.hover[variant],
           !isSelected && "group-hover:opacity-100",

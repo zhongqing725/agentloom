@@ -52,7 +52,7 @@ const styles = sortCx({
     "relative inline-flex shrink-0 items-center justify-center overflow-visible rounded-2lg",
     "bg-background-primary-default text-foreground-icon-primary",
     "border border-border-button-default shadow-xs",
-    "select-none cursor-pointer",
+    "select-none cursor-pointer button-press-motion",
     "transition-[background-color,border-color,box-shadow,color] duration-150 ease",
     "outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-border-focus-ring",
     "hover:bg-background-primary-hover hover:border-border-button-hover",

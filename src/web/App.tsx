@@ -17,6 +17,7 @@ import {
 import type { Bootstrap } from '../shared/types'
 import { api } from './api'
 import { Modal } from './components/ui'
+import { Modal as BoardModal } from '@/components/base/modal/modal'
 import { Button } from '@/components/base/buttons/button'
 import { IconButton } from '@/components/base/buttons/icon-button'
 import { Input } from '@/components/base/input/input'
@@ -241,7 +242,7 @@ function StartRunButton() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>取消</Button>
-            <Button onClick={start} disabled={loading || !input.trim()}>
+            <Button onClick={() => void start()} disabled={loading || !input.trim()}>
               {loading ? '正在启动…' : '开始运行'}
             </Button>
           </>
@@ -306,6 +307,8 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
       setConfig(next)
       setModel(next.model)
       setBaseUrl(next.baseUrl)
+    }).catch((cause: unknown) => {
+      setMessage(cause instanceof Error ? cause.message : '无法加载模型设置')
     })
   }, [open])
 
@@ -384,13 +387,17 @@ function Shell() {
   }, [location.pathname])
 
   useEffect(() => {
-    if (!mobileNav) return
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previous
+    setMobileNav(false)
+  }, [location.pathname])
+
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)')
+    const closeOnDesktop = () => {
+      if (desktop.matches) setMobileNav(false)
     }
-  }, [mobileNav])
+    desktop.addEventListener('change', closeOnDesktop)
+    return () => desktop.removeEventListener('change', closeOnDesktop)
+  }, [])
 
   if (loading) {
     return (
@@ -422,20 +429,16 @@ function Shell() {
 
   return (
     <div className="min-h-dvh bg-background-full font-sans text-text-primary">
-      <button
-        type="button"
-        aria-label="关闭导航"
-        onClick={() => setMobileNav(false)}
-        className={cx(
-          'fixed inset-0 z-40 bg-surface-overlay transition-opacity duration-200 lg:hidden',
-          mobileNav ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-        )}
-      />
-      <aside
-        className={cx(
-          'fixed inset-y-0 start-0 z-50 w-[272px] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:w-[248px] lg:translate-x-0',
-          mobileNav ? 'translate-x-0' : '-translate-x-full',
-        )}
+      <aside className="fixed inset-y-0 start-0 z-50 hidden w-[248px] lg:block">
+        <Sidebar onSettings={() => setSettingsOpen(true)} />
+      </aside>
+      <BoardModal
+        isOpen={mobileNav}
+        onOpenChange={setMobileNav}
+        aria-label="主导航"
+        overlayClassName="items-stretch justify-start p-0 sm:p-0"
+        panelClassName="h-full max-w-[272px]"
+        className="h-full gap-0 rounded-none border-0 bg-surface-sidebar py-0"
       >
         <Sidebar
           onSettings={() => {
@@ -444,7 +447,7 @@ function Shell() {
           }}
           onClose={() => setMobileNav(false)}
         />
-      </aside>
+      </BoardModal>
 
       <div className="min-h-dvh lg:ps-[248px]">
         <header className="sticky top-0 z-30 flex h-15 items-center gap-3 border-b border-separator-border bg-background-primary-default px-4 backdrop-blur-xl sm:px-6 lg:px-8">
@@ -452,6 +455,8 @@ function Shell() {
             icon={RiMenuLine}
             size="small"
             aria-label="打开导航"
+            aria-expanded={mobileNav}
+            aria-haspopup="dialog"
             onClick={() => setMobileNav(true)}
             className="lg:hidden"
           />
