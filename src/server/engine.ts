@@ -1,4 +1,4 @@
-import type { GraphNode, NodeOutput, NodeStatus, Usage } from '../shared/types.js'
+import type { GraphNode, NodeOutput, NodeStatus, Usage, VerdictRoute } from '../shared/types.js'
 import type { AgentContext, Evidence } from './llm.js'
 import { runAgentNode, runDiverge } from './llm.js'
 import { searchKnowledge } from './retrieval.js'
@@ -48,6 +48,19 @@ const ANGLE_DOC: Record<string, string> = {
   市场: 'doc-market',
   产业链: 'doc-chain',
   竞争: 'doc-competition',
+}
+
+const NODE_LABEL: Record<string, string> = {
+  input: '研究任务',
+  planner: '研究规划师',
+  market: '市场研究员',
+  chain: '产业链研究员',
+  competition: '竞争情报员',
+  analyst: '首席分析师',
+  writer: '报告撰写师',
+  verifier: '事实核查员',
+  editor: '主编',
+  output: '研究报告',
 }
 
 export async function executeRun(runId: string): Promise<void> {
@@ -146,6 +159,27 @@ export async function executeRun(runId: string): Promise<void> {
     }))
   }
 
+  const downstreamOf = (start: string): Set<string> => {
+    const affected = new Set<string>([start])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const edge of workflow.graph.edges) {
+        if (edge.kind === 'loop') continue
+        if (affected.has(edge.source) && !affected.has(edge.target)) {
+          affected.add(edge.target)
+          changed = true
+        }
+      }
+    }
+    return affected
+  }
+
+  const chooseRoute = (routes: VerdictRoute[]): VerdictRoute | undefined => {
+    const priority: Record<string, number> = { citation: 5, number: 4, logic: 3, coverage: 2, wording: 1, other: 0 }
+    return [...routes].sort((a, b) => (priority[b.type] ?? 0) - (priority[a.type] ?? 0))[0]
+  }
+
   const executeNode = async (state: NodeState): Promise<void> => {
     const node = state.node
     const agent = node.data.agentId ? agents.find((item) => item.id === node.data.agentId) : undefined
@@ -197,7 +231,7 @@ export async function executeRun(runId: string): Promise<void> {
           input: run.input,
           upstream: buildUpstream(node.id),
           evidence: agent.role === 'researcher' ? retrieveEvidence(node.data.angle ?? '市场') : [],
-          feedback: agent.role === 'writer' && feedback ? feedback : undefined,
+          feedback: feedback || undefined,
           iteration: state.iteration,
           mode: run.mode,
         }
@@ -226,6 +260,14 @@ export async function executeRun(runId: string): Promise<void> {
 
       if (node.type === 'verifier' && output.verdict) {
         if (!output.verdict.passed && loopCount < maxLoop) {
+          const routes = output.verdict.routes ?? []
+          const chosen = chooseRoute(routes)
+          const target = chosen && states.has(chosen.target) ? chosen.target : 'writer'
+          const nextIteration = loopCount + 1
+          const affected = downstreamOf(target)
+          output.verdict.selectedTarget = target
+          output.verdict.selectedType = chosen?.type
+
           state.status = 'pending'
           state.output = undefined
           state.score = output.verdict.score
@@ -239,24 +281,44 @@ export async function executeRun(runId: string): Promise<void> {
           })
           emit(
             'verify.failed',
-            `第 ${loopCount + 1} 轮核查未通过：支持率 ${(output.verdict.score * 100).toFixed(0)}%`,
-            { score: output.verdict.score, issues: output.verdict.issues },
+            `第 ${nextIteration} 轮核查未通过：支持率 ${(output.verdict.score * 100).toFixed(0)}%`,
+            {
+              score: output.verdict.score,
+              issues: output.verdict.issues,
+              routes,
+              target,
+            },
             node.id,
           )
-          const writer = states.get('writer')
-          if (writer) {
-            writer.status = 'pending'
-            writer.output = undefined
-            writer.error = undefined
-            writer.iteration = loopCount + 1
+
+          for (const affectedId of affected) {
+            const nodeState = states.get(affectedId)
+            if (!nodeState) continue
+            nodeState.status = 'pending'
+            nodeState.output = undefined
+            nodeState.error = undefined
+            nodeState.attempts = 0
+            nodeState.iteration = nextIteration
           }
-          loopCount += 1
-          state.iteration = loopCount
-          feedback = output.verdict.issues.join('\n')
+
+          loopCount = nextIteration
+          state.iteration = nextIteration
+          feedback =
+            routes
+              .map((route) => `[${route.type} → ${NODE_LABEL[route.target] ?? route.target}] ${route.message}`)
+              .join('\n') || output.verdict.issues.join('\n')
+
           emit(
             'loop.triggered',
-            `Self-Loop：带着 ${output.verdict.issues.length} 条核查意见回到「报告撰写师」`,
-            { iteration: loopCount, target: 'writer', issues: output.verdict.issues },
+            `Self-Loop：${chosen?.type ?? 'issue'} →「${NODE_LABEL[target] ?? target}」`,
+            {
+              iteration: loopCount,
+              target,
+              routeType: chosen?.type,
+              affected: [...affected],
+              issues: output.verdict.issues,
+              routes,
+            },
             node.id,
           )
           return

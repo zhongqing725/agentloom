@@ -9,6 +9,7 @@ import {
   ReactFlow,
   useEdgesState,
   useNodesState,
+  type Connection,
   type Edge,
   type Node,
   type NodeProps,
@@ -28,6 +29,7 @@ type FlowNodeData = {
   iteration?: number
   pluginIds?: string[]
   pluginDefs?: PluginDef[]
+  onPluginDrop?: (pluginId: string) => void
   [key: string]: unknown
 }
 
@@ -38,6 +40,14 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
     <div
       className={`loom-node kind-${data.kind} status-${status} ${selected ? 'selected' : ''}`}
       style={{ '--node-color': data.color } as CSSProperties}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('text/plain')) event.preventDefault()
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        const pluginId = event.dataTransfer.getData('text/plain')
+        if (pluginId) data.onPluginDrop?.(pluginId)
+      }}
     >
       {data.kind !== 'input' && <Handle type="target" position={Position.Left} className="loom-handle" />}
       <div className="loom-node-bar" style={{ background: data.color }} />
@@ -83,6 +93,10 @@ export function WorkflowGraph({
   statuses,
   onNodeClick,
   onNodeDragStop,
+  onConnect,
+  onNodesDelete,
+  onEdgesDelete,
+  onPluginDrop,
   readOnly = false,
   height = 520,
 }: {
@@ -92,6 +106,10 @@ export function WorkflowGraph({
   statuses?: Map<string, NodeStatusInfo>
   onNodeClick?: (nodeId: string) => void
   onNodeDragStop?: (nodeId: string, position: { x: number; y: number }) => void
+  onConnect?: (connection: Connection) => void
+  onNodesDelete?: (nodeIds: string[]) => void
+  onEdgesDelete?: (edgeIds: string[]) => void
+  onPluginDrop?: (nodeId: string, pluginId: string) => void
   readOnly?: boolean
   height?: number
 }) {
@@ -114,10 +132,11 @@ export function WorkflowGraph({
           iteration: info?.iteration,
           pluginIds,
           pluginDefs: pluginIds.map((id) => plugins.find((plugin) => plugin.id === id)).filter(Boolean) as PluginDef[],
+          onPluginDrop: onPluginDrop ? (pluginId: string) => onPluginDrop(node.id, pluginId) : undefined,
         },
       }
     })
-  }, [graph, agents, plugins, statuses])
+  }, [graph, agents, plugins, statuses, onPluginDrop])
 
   const initialEdges = useMemo<Edge[]>(() => {
     return graph.edges.map((edge) => ({
@@ -158,8 +177,12 @@ export function WorkflowGraph({
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id)}
         onNodeDragStop={(_, node) => onNodeDragStop?.(node.id, node.position)}
+        onConnect={onConnect}
+        onNodesDelete={(deleted) => onNodesDelete?.(deleted.map((node) => node.id))}
+        onEdgesDelete={(deleted) => onEdgesDelete?.(deleted.map((edge) => edge.id))}
         nodesDraggable={!readOnly}
-        nodesConnectable={false}
+        nodesConnectable={!readOnly}
+        deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
         edgesFocusable={false}
         elementsSelectable
         fitView

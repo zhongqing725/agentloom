@@ -27,7 +27,7 @@ import type { Citation, NodeRun, RunEvent } from '../../shared/types'
 import { MarkdownView, Modal, Pill, ScoreRing, StatusPill } from '../components/ui'
 import { WorkflowGraph, type NodeStatusInfo } from '../components/Graph'
 
-type Tab = 'graph' | 'report' | 'verify' | 'events'
+type Tab = 'graph' | 'report' | 'ledger' | 'verify' | 'events'
 
 function formatTime(value?: string) {
   if (!value) return '--:--:--'
@@ -40,6 +40,21 @@ function duration(start?: string, end?: string) {
   if (ms < 1000) return `${ms}ms`
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
   return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+}
+
+const TARGET_LABEL: Record<string, string> = {
+  planner: '研究规划师',
+  market: '市场研究员',
+  chain: '产业链研究员',
+  competition: '竞争情报员',
+  analyst: '首席分析师',
+  writer: '报告撰写师',
+  verifier: '事实核查员',
+  editor: '主编',
+}
+
+function targetLabel(target: string) {
+  return TARGET_LABEL[target] ?? target
 }
 
 function latestByNode(nodes: NodeRun[]) {
@@ -66,7 +81,7 @@ export default function RunPage() {
   const [events, setEvents] = useState<RunEvent[]>([])
   const [tab, setTab] = useState<Tab>(() => {
     const requested = searchParams.get('tab')
-    return requested === 'report' || requested === 'verify' || requested === 'events' ? requested : 'graph'
+    return requested === 'report' || requested === 'ledger' || requested === 'verify' || requested === 'events' ? requested : 'graph'
   })
   const [selectedNode, setSelectedNode] = useState<NodeRun | null>(null)
   const [copied, setCopied] = useState(false)
@@ -154,6 +169,9 @@ export default function RunPage() {
     return [...map.values()]
   }, [detail])
 
+  const ledgerClaims = verdict?.claims ?? []
+  const supportedClaims = ledgerClaims.filter((claim) => claim.supported).length
+
   if (!data || !detail) {
     return (
       <div className="page run-loading">
@@ -235,6 +253,10 @@ export default function RunPage() {
         </button>
         <button className={tab === 'report' ? 'active' : ''} onClick={() => setTab('report')}>
           <FileText size={14} /> 研究报告
+        </button>
+        <button className={tab === 'ledger' ? 'active' : ''} onClick={() => setTab('ledger')}>
+          <BadgeCheck size={14} /> 证据账本
+          {verdict?.claims?.length ? <span>{verdict.claims.length}</span> : null}
         </button>
         <button className={tab === 'verify' ? 'active' : ''} onClick={() => setTab('verify')}>
           <ShieldCheck size={14} /> 核查与回环
@@ -375,6 +397,78 @@ export default function RunPage() {
         </div>
       )}
 
+      {tab === 'ledger' && (
+        <div className="ledger-layout">
+          <div className="panel ledger-panel">
+            <div className="ledger-head">
+              <div>
+                <div className="eyebrow">CLAIM LEDGER</div>
+                <h2>证据账本</h2>
+                <p>每一条主张都能回到证据、核查结论与路由目标。</p>
+              </div>
+              <div className="ledger-summary">
+                <div><strong>{ledgerClaims.length}</strong><span>条主张</span></div>
+                <div><strong className="ok-text">{supportedClaims}</strong><span>被支持</span></div>
+                <div><strong className="bad-text">{ledgerClaims.length - supportedClaims}</strong><span>待修正</span></div>
+              </div>
+            </div>
+            <div className="ledger-list">
+              {ledgerClaims.map((claim, index) => {
+                const citation = claim.citation ? citations.find((item) => item.id === claim.citation) : undefined
+                return (
+                  <div className={`ledger-row ${claim.supported ? 'ok' : 'bad'}`} key={index}>
+                    <div className="ledger-index">{String(index + 1).padStart(2, '0')}</div>
+                    <div className="ledger-main">
+                      <p>{claim.claim}</p>
+                      <div className="ledger-meta">
+                        <span className={`ledger-status ${claim.supported ? 'ok' : 'bad'}`}>
+                          {claim.supported ? '支持' : '不支持'}
+                        </span>
+                        {claim.citation && <span className="ledger-cite">[{claim.citation}]</span>}
+                        <span>{claim.reason}</span>
+                      </div>
+                      {citation && (
+                        <div className="ledger-evidence">
+                          <strong>{citation.docTitle}</strong>
+                          <p>{citation.quote.slice(0, 220)}…</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {ledgerClaims.length === 0 && (
+                <div className="ledger-empty">
+                  <BadgeCheck size={18} />
+                  <span>报告生成后，这里会出现逐条主张与证据。</span>
+                </div>
+              )}
+            </div>
+          </div>
+          <aside className="panel ledger-side">
+            <ScoreRing score={verdict?.score ?? detail.run.score ?? 0} size={100} />
+            <h3>{verdict?.passed ? '账本已对齐' : '账本存在缺口'}</h3>
+            <p>核查器逐条比对主张与证据；不通过的意见会按类型路由回上游节点。</p>
+            {(verdict?.routes?.length ?? 0) > 0 && (
+              <div className="route-list">
+                <div className="route-list-head">问题路由</div>
+                {verdict!.routes!.map((route, index) => (
+                  <div className="route-item" key={index}>
+                    <span className="route-type">{route.type}</span>
+                    <span className="route-arrow">→</span>
+                    <strong>{targetLabel(route.target)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="ledger-key">
+              <span><i className="key-dot ok" /> 证据支持</span>
+              <span><i className="key-dot bad" /> 缺少证据 / 数字不一致</span>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {tab === 'verify' && (
         <div className="verify-layout">
           <div className="panel verify-hero">
@@ -383,7 +477,7 @@ export default function RunPage() {
               <h2>{verdict?.passed ? '核查通过' : verdict ? '需要复核' : '等待核查'}</h2>
               <p>
                 {verdict
-                  ? `事实核查员逐条核对了 ${verdict.claims?.length ?? 0} 条结论。核查不通过时，运行时会自动回到写作节点，并把问题清单带回去。`
+                  ? `事实核查员逐条核对了 ${verdict.claims?.length ?? 0} 条结论。核查不通过时，运行时会按问题类型回到对应的上游节点，而不是一律重写。`
                   : '报告生成后，核查员会抽取结论、核对引用与数字，再决定是否回环。'}
               </p>
             </div>
@@ -399,6 +493,19 @@ export default function RunPage() {
                 </div>
                 <Pill tone={verdict?.passed ? 'green' : 'orange'}>{verdict?.passed ? 'PASS' : 'REVIEW'}</Pill>
               </div>
+              {(verdict?.routes?.length ?? 0) > 0 && (
+                <div className="route-list">
+                  <div className="route-list-head">本轮问题路由</div>
+                  {verdict!.routes!.map((route, index) => (
+                    <div className="route-item" key={index}>
+                      <span className="route-type">{route.type}</span>
+                      <span className="route-arrow">→</span>
+                      <strong>{targetLabel(route.target)}</strong>
+                      <span className="route-message">{route.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="claim-list">
                 {(verdict?.claims ?? []).map((claim, index) => (
                   <div className={`claim ${claim.supported ? 'ok' : 'bad'}`} key={index}>
@@ -427,7 +534,14 @@ export default function RunPage() {
                     <span className="loop-index">L{index + 1}</span>
                     <div>
                       <strong>{run.output?.verdict?.passed ? '通过' : '未通过'}</strong>
-                      <span>{Math.round((run.output?.verdict?.score ?? 0) * 100)}% · {run.output?.verdict?.issues.length ?? 0} 条问题</span>
+                      <span>
+                        {Math.round((run.output?.verdict?.score ?? 0) * 100)}% · {run.output?.verdict?.issues.length ?? 0} 条问题
+                        {run.output?.verdict?.selectedTarget
+                          ? ` · → ${targetLabel(run.output.verdict.selectedTarget)}`
+                          : run.output?.verdict?.routes?.[0]?.target
+                            ? ` · → ${targetLabel(run.output.verdict.routes[0].target)}`
+                            : ''}
+                      </span>
                     </div>
                     {run.output?.verdict?.passed ? <BadgeCheck size={16} className="ok-icon" /> : <AlertTriangle size={16} className="warn-icon" />}
                   </div>
@@ -523,6 +637,19 @@ function NodeOutputView({ node }: { node: NodeRun }) {
             <p>{output.verdict.issues.length} 条问题</p>
           </div>
         </div>
+        {(output.verdict.routes?.length ?? 0) > 0 && (
+          <div className="route-list">
+            <div className="route-list-head">问题路由</div>
+            {output.verdict.routes!.map((route, index) => (
+              <div className="route-item" key={index}>
+                <span className="route-type">{route.type}</span>
+                <span className="route-arrow">→</span>
+                <strong>{targetLabel(route.target)}</strong>
+                <span className="route-message">{route.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="claim-list">
           {output.verdict.claims?.map((claim, index) => (
             <div className={`claim ${claim.supported ? 'ok' : 'bad'}`} key={index}>

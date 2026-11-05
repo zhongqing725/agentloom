@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import type { Connection } from '@xyflow/react'
 import {
   ArrowRight,
   Bot,
   GitBranch,
+  GripVertical,
   Info,
   Play,
+  Plus,
   Settings2,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Users,
   Workflow,
 } from 'lucide-react'
@@ -16,6 +20,30 @@ import { useApp } from '../App'
 import { api } from '../api'
 import { Modal, PageHeader, Pill, PluginIcon } from '../components/ui'
 import { WorkflowGraph } from '../components/Graph'
+
+const SPECIALISTS = [
+  {
+    name: '风险审查员',
+    title: '独立审查风险、反方证据与下行情形',
+    description: '在报告交付前加入一道独立审查，专门挑战主判断。',
+    color: '#8C4A2F',
+    plugins: ['cognition.critique'],
+  },
+  {
+    name: '数据可视化师',
+    title: '把关键数字整理成图表建议',
+    description: '为市场、产业链和竞争章节生成可执行的图表规格。',
+    color: '#2F6F6A',
+    plugins: ['tool.calculator'],
+  },
+  {
+    name: '合规审查员',
+    title: '检查隐私、合规与对外表述',
+    description: '检查引用、免责声明与可能引发合规风险的表述。',
+    color: '#5B5F9E',
+    plugins: ['verify.citations'],
+  },
+]
 
 export default function WorkflowPage() {
   const { data, refresh } = useApp()
@@ -30,6 +58,9 @@ export default function WorkflowPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settings, setSettings] = useState(data?.workflow.settings)
   const [error, setError] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [specialistIndex, setSpecialistIndex] = useState(0)
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
     if (data) setSettings(data.workflow.settings)
@@ -89,14 +120,121 @@ export default function WorkflowPage() {
     await refresh()
   }
 
+  const saveGraph = async (graph: typeof data.workflow.graph) => {
+    await api.updateWorkflow({ graph })
+    await refresh()
+  }
+
+  const connect = async (connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return
+    if (data.workflow.graph.edges.some((edge) => edge.source === connection.source && edge.target === connection.target)) return
+    await saveGraph({
+      ...data.workflow.graph,
+      edges: [
+        ...data.workflow.graph.edges,
+        {
+          id: `e-${connection.source}-${connection.target}-${Date.now()}`,
+          source: connection.source,
+          target: connection.target,
+        },
+      ],
+    })
+  }
+
+  const removeNode = async (nodeId: string) => {
+    const node = data.workflow.graph.nodes.find((item) => item.id === nodeId)
+    if (!node || node.type === 'input' || node.type === 'output') return
+    await saveGraph({
+      nodes: data.workflow.graph.nodes.filter((item) => item.id !== nodeId),
+      edges: data.workflow.graph.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+    })
+    setSelectedId(null)
+  }
+
+  const removeEdges = async (edgeIds: string[]) => {
+    const remove = new Set(edgeIds)
+    await saveGraph({
+      ...data.workflow.graph,
+      edges: data.workflow.graph.edges.filter((edge) => !remove.has(edge.id)),
+    })
+  }
+
+  const dropPlugin = useCallback(async (nodeId: string, pluginId: string) => {
+    const node = data.workflow.graph.nodes.find((item) => item.id === nodeId)
+    const agent = node?.data.agentId ? data.agents.find((item) => item.id === node.data.agentId) : undefined
+    if (!agent || agent.plugins.includes(pluginId)) return
+    await api.updateAgent(agent.id, { plugins: [...agent.plugins, pluginId] })
+    await refresh()
+  }, [data, refresh])
+
+  const addSpecialist = async () => {
+    const template = SPECIALISTS[specialistIndex]
+    setCreating(true)
+    setError('')
+    try {
+      const { agent } = await api.createAgent({
+        name: template.name,
+        title: template.title,
+        description: template.description,
+        color: template.color,
+        plugins: template.plugins,
+      })
+      const newNodeId = `node-${agent.id}`
+      const anchor = selectedNode && selectedNode.type !== 'input' ? selectedNode : data.workflow.graph.nodes.find((node) => node.id === 'writer')
+      const outgoing = anchor
+        ? data.workflow.graph.edges.filter((edge) => edge.kind !== 'loop' && edge.source === anchor.id)
+        : []
+      const next = outgoing[0]?.target
+      const anchorPosition = anchor?.position ?? { x: 700, y: 500 }
+      const nextNode = next ? data.workflow.graph.nodes.find((node) => node.id === next) : undefined
+      const position = nextNode
+        ? {
+            x: (anchorPosition.x + nextNode.position.x) / 2,
+            y: Math.max(anchorPosition.y, nextNode.position.y) + 115,
+          }
+        : { x: anchorPosition.x + 190, y: anchorPosition.y + 110 }
+      const node = {
+        id: newNodeId,
+        type: 'agent' as const,
+        position,
+        data: {
+          label: agent.name,
+          subtitle: agent.title,
+          agentId: agent.id,
+          kind: 'agent' as const,
+        },
+      }
+      const baseEdges = outgoing.length === 1
+        ? data.workflow.graph.edges.filter((edge) => edge.id !== outgoing[0].id)
+        : data.workflow.graph.edges
+      const edges = anchor
+        ? [
+            ...baseEdges,
+            { id: `e-${anchor.id}-${newNodeId}`, source: anchor.id, target: newNodeId },
+            ...(next ? [{ id: `e-${newNodeId}-${next}`, source: newNodeId, target: next }] : []),
+          ]
+        : baseEdges
+      await saveGraph({ nodes: [...data.workflow.graph.nodes, node], edges })
+      setSelectedId(newNodeId)
+      setAddOpen(false)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '创建 Agent 失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div className="page workflow-page">
       <PageHeader
         eyebrow="ORCHESTRATION"
         title="编排画布"
-        description="拖拽节点调整布局；每个节点都可以挂载能力插件。运行后，同一张图会变成实时执行状态。"
+        description="拖动节点、连线，或把插件卡拖到节点上；运行后，同一张图会变成实时执行状态。"
         actions={
           <>
+            <button className="btn btn-ghost" onClick={() => setAddOpen(true)}>
+              <Plus size={15} /> 添加 Agent
+            </button>
             <button className="btn btn-ghost" onClick={() => setSettingsOpen(true)}>
               <SlidersHorizontal size={15} /> 调度设置
             </button>
@@ -131,12 +269,35 @@ export default function WorkflowPage() {
               <span><i className="legend-line" /> 回环</span>
             </div>
           </div>
+          <div className="plugin-drawer">
+            <span className="plugin-drawer-label"><GripVertical size={12} /> 拖一张插件卡到节点上</span>
+            {data.plugins.map((plugin) => (
+              <span
+                className="plugin-drag"
+                key={plugin.id}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData('text/plain', plugin.id)
+                  event.dataTransfer.effectAllowed = 'copy'
+                }}
+                style={{ '--plugin-color': plugin.color } as CSSProperties}
+                title={plugin.description}
+              >
+                <PluginIcon name={plugin.icon} size={12} />
+                {plugin.name}
+              </span>
+            ))}
+          </div>
           <WorkflowGraph
             graph={data.workflow.graph}
             agents={data.agents}
             plugins={data.plugins}
             onNodeClick={setSelectedId}
             onNodeDragStop={persistPositions}
+            onConnect={connect}
+            onNodesDelete={(nodeIds) => { for (const nodeId of nodeIds) void removeNode(nodeId) }}
+            onEdgesDelete={(edgeIds) => void removeEdges(edgeIds)}
+            onPluginDrop={dropPlugin}
             height={610}
           />
         </div>
@@ -199,6 +360,11 @@ export default function WorkflowPage() {
                   <button className="btn btn-ghost full" onClick={() => navigate('/team')}>
                     在团队中编辑 <ArrowRight size={14} />
                   </button>
+                  {selectedNode.type !== 'input' && selectedNode.type !== 'output' && (
+                    <button className="btn btn-ghost full inspector-delete" onClick={() => removeNode(selectedNode.id)}>
+                      <Trash2 size={14} /> 从画布移除节点
+                    </button>
+                  )}
                 </>
               ) : (
                 <div className="inspector-empty">
@@ -239,6 +405,45 @@ export default function WorkflowPage() {
           <span>研究任务</span>
           <textarea rows={5} value={input} onChange={(event) => setInput(event.target.value)} />
         </label>
+        {error && <div className="form-error">{error}</div>}
+      </Modal>
+
+      <Modal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="添加专家节点"
+        subtitle="插入到当前选中节点之后；如果它只有一个下游，会自动接上，保持流程可运行。"
+        footer={
+          <>
+            <button className="btn btn-ghost" onClick={() => setAddOpen(false)}>取消</button>
+            <button className="btn btn-accent" onClick={addSpecialist} disabled={creating}>
+              {creating ? '正在创建…' : '创建并插入'}
+            </button>
+          </>
+        }
+      >
+        <div className="specialist-grid">
+          {SPECIALISTS.map((template, index) => (
+            <button
+              key={template.name}
+              className={`specialist-card ${index === specialistIndex ? 'active' : ''}`}
+              onClick={() => setSpecialistIndex(index)}
+            >
+              <span className="specialist-bar" style={{ background: template.color }} />
+              <strong>{template.name}</strong>
+              <p>{template.description}</p>
+              <span className="specialist-plugins">
+                {template.plugins.map((pluginId) => {
+                  const plugin = data.plugins.find((item) => item.id === pluginId)
+                  return plugin ? <span key={pluginId}><PluginIcon name={plugin.icon} size={11} /> {plugin.name}</span> : null
+                })}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          将插入到「{selectedNode?.data.label ?? '报告撰写师'}」之后；如果该节点有多个下游，只建立一条入边，之后可在画布上手动连线。
+        </p>
         {error && <div className="form-error">{error}</div>}
       </Modal>
 

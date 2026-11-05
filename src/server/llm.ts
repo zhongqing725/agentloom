@@ -1,4 +1,4 @@
-import type { Agent, Candidate, Citation, Mode, NodeOutput, Usage, Verdict } from '../shared/types.js'
+import type { Agent, Candidate, Citation, Mode, NodeOutput, Usage, Verdict, VerdictRoute } from '../shared/types.js'
 import { firstSentences, tokenize } from './retrieval.js'
 
 export interface Evidence {
@@ -398,6 +398,26 @@ function reportV2(ctx: AgentContext): string {
     )
 }
 
+function mockSpecialist(ctx: AgentContext): NodeOutput {
+  const upstreamCount = ctx.upstream.length
+  const data = {
+    summary: `${ctx.agent.name}对 ${upstreamCount} 个上游节点的输出做了独立审查，重点检查「${ctx.agent.title}」。`,
+    findings: [
+      '事实性结论与情景假设已经分开标注，没有把预测写成事实。',
+      '关键数字都能在证据索引中找到对应片段，但部分判断仍依赖单一来源。',
+      '竞争格局与风险提示之间存在张力，建议在终稿中保留反方情景。',
+    ],
+    recommendation: '建议保留稳健情景作为主判断，同时把反方情景写入风险提示；对单一来源的判断补充第二来源后再对外发布。',
+    reviewedNodes: ctx.upstream.map((item) => item.title),
+  }
+  const text = asJson(data)
+  return {
+    text,
+    data,
+    usage: usageOf(ctx.agent.systemPrompt + JSON.stringify(ctx.upstream.map((item) => item.output.data)), text),
+  }
+}
+
 function mockWriter(ctx: AgentContext): NodeOutput {
   const markdown = ctx.iteration > 0 || ctx.feedback ? reportV2(ctx) : reportV1(ctx)
   const citations = allCitations(ctx)
@@ -443,27 +463,72 @@ function numbersIn(text: string): string[] {
     })
 }
 
+function inferRouteTarget(claim: string, citation?: string | null): string {
+  const ref = citation?.match(/^[MLC]/)?.[0] ?? claim.match(/\[([MLC])\d+\]/)?.[1]
+  if (ref === 'M') return 'market'
+  if (ref === 'L') return 'chain'
+  if (ref === 'C') return 'competition'
+  if (/市场|出货|价格|渗透率/.test(claim)) return 'market'
+  if (/产业链|BOM|毛利|光学|芯片/.test(claim)) return 'chain'
+  if (/竞争|份额|Meta|渠道|厂商|洗牌|格局/.test(claim)) return 'competition'
+  return 'writer'
+}
+
+function routesFromClaims(claims: Verdict['claims'] = [], issues: string[] = []): VerdictRoute[] {
+  const routes = claims
+    .filter((claim) => !claim.supported)
+    .map((claim) => ({
+      type: claim.citation ? ('logic' as const) : ('citation' as const),
+      target: inferRouteTarget(claim.claim, claim.citation),
+      message: claim.reason,
+    }))
+  if (routes.length > 0) return routes
+  return issues.map((message) => ({ type: 'other' as const, target: 'writer', message }))
+}
+
 function deterministicVerdict(markdown: string, citations: Citation[], threshold: number): Verdict {
   const refMap = new Map(citations.map((citation) => [citation.id, citation]))
   const claims = extractClaims(markdown)
-  const checked = claims.map((claim) => {
+  const checked: Array<{
+    claim: string
+    citation: string | null
+    supported: boolean
+    reason: string
+    route?: VerdictRoute
+  }> = claims.map((claim) => {
     const refs = [...claim.matchAll(/\[([A-Z]\d+)\]/g)].map((match) => match[1])
     if (refs.length === 0) {
-      return { claim, citation: null, supported: false, reason: '结论没有引用证据。' }
+      const reason = '结论没有引用证据。'
+      return {
+        claim,
+        citation: null,
+        supported: false,
+        reason,
+        route: { type: 'citation', target: inferRouteTarget(claim), message: reason },
+      }
     }
     const citation = refMap.get(refs[0])
     if (!citation) {
-      return { claim, citation: refs[0], supported: false, reason: `引用 ${refs[0]} 不在证据库中。` }
+      const reason = `引用 ${refs[0]} 不在证据库中。`
+      return {
+        claim,
+        citation: refs[0],
+        supported: false,
+        reason,
+        route: { type: 'citation', target: inferRouteTarget(claim, refs[0]), message: reason },
+      }
     }
     const claimNumbers = numbersIn(claim.replace(/\[[A-Z]\d+\]/g, ''))
     const quoteNumbers = numbersIn(citation.quote)
     const missingNumber = claimNumbers.find((number) => !quoteNumbers.includes(number))
     if (missingNumber) {
+      const reason = `数字 ${missingNumber} 在证据中找不到对应值。`
       return {
         claim,
         citation: refs[0],
         supported: false,
-        reason: `数字 ${missingNumber} 在证据中找不到对应值。`,
+        reason,
+        route: { type: 'number', target: 'analyst', message: reason },
       }
     }
     const claimTokens = new Set(tokenize(claim.replace(/\[[A-Z]\d+\]/g, '')))
@@ -471,7 +536,14 @@ function deterministicVerdict(markdown: string, citations: Citation[], threshold
     let overlap = 0
     for (const token of claimTokens) if (quoteTokens.has(token)) overlap += 1
     if (overlap < 2) {
-      return { claim, citation: refs[0], supported: false, reason: '结论与引用文本的语义重叠不足。' }
+      const reason = '结论与引用文本的语义重叠不足。'
+      return {
+        claim,
+        citation: refs[0],
+        supported: false,
+        reason,
+        route: { type: 'logic', target: 'analyst', message: reason },
+      }
     }
     return { claim, citation: refs[0], supported: true, reason: '引用存在，数字与语义均可对应。' }
   })
@@ -479,10 +551,14 @@ function deterministicVerdict(markdown: string, citations: Citation[], threshold
   const supported = checked.filter((item) => item.supported).length
   const score = checked.length === 0 ? 0 : Number((supported / checked.length).toFixed(2))
   const issues = checked.filter((item) => !item.supported).map((item) => `${item.reason}「${item.claim.slice(0, 38)}…」`)
+  const routes = checked
+    .filter((item) => !item.supported && item.route)
+    .map((item) => item.route!)
   return {
     passed: score >= threshold,
     score,
     issues,
+    routes,
     claims: checked,
   }
 }
@@ -634,16 +710,19 @@ async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeO
   try {
     const result = await callLive(
       ctx.agent.systemPrompt,
-      `${livePrompt(ctx)}\n\n待核查报告：\n${markdown}\n\n请输出 JSON：{"score":0-1,"passed":boolean,"claims":[{"claim":"","citation":"","supported":boolean,"reason":""}],"issues":[""]}`,
+      `${livePrompt(ctx)}\n\n待核查报告：\n${markdown}\n\n请输出 JSON：{"score":0-1,"passed":boolean,"claims":[{"claim":"","citation":"","supported":boolean,"reason":""}],"issues":[""],"routes":[{"type":"citation|number|logic|coverage|wording","target":"market|chain|competition|analyst|writer|planner","message":""}]}`,
       { json: true, temperature: 0.1 },
     )
     const parsed = parseJsonText(result.text) as Verdict | undefined
     if (parsed && typeof parsed.score === 'number') {
+      const issues = parsed.issues ?? []
+      const claims = parsed.claims ?? []
       const verdict: Verdict = {
         passed: parsed.score >= threshold,
         score: Number(parsed.score.toFixed(2)),
-        issues: parsed.issues ?? [],
-        claims: parsed.claims ?? [],
+        issues,
+        routes: parsed.routes?.length ? parsed.routes : routesFromClaims(claims, issues),
+        claims,
       }
       return {
         text: result.text,
@@ -679,6 +758,7 @@ export async function runAgentNode(ctx: AgentContext, threshold: number): Promis
   }
 
   if (ctx.agent.role === 'planner') return mockPlanner(ctx)
+  if (ctx.agent.role === 'specialist') return mockSpecialist(ctx)
   if (ctx.agent.role === 'researcher') return mockResearcher(ctx)
   if (ctx.agent.role === 'analyst') {
     const output = mockAnalyst(ctx)

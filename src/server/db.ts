@@ -240,6 +240,42 @@ export function updateAgent(id: string, patch: Partial<Agent>): Agent | undefine
   return getAgent(id)
 }
 
+export function createAgent(input: {
+  projectId: string
+  name: string
+  role: Agent['role']
+  title: string
+  description: string
+  color: string
+  model: string
+  temperature: number
+  systemPrompt: string
+  tools: string[]
+  plugins: string[]
+}): Agent {
+  const id = `agent-${crypto.randomUUID().slice(0, 8)}`
+  const sort = (db.prepare('SELECT COALESCE(MAX(sort), 0) AS n FROM agents').get() as { n: number }).n + 1
+  db.prepare(
+    `INSERT INTO agents (id, project_id, name, role, title, description, color, model, temperature, system_prompt, tools_json, plugins_json, sort)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    input.projectId,
+    input.name,
+    input.role,
+    input.title,
+    input.description,
+    input.color,
+    input.model,
+    input.temperature,
+    input.systemPrompt,
+    JSON.stringify(input.tools),
+    JSON.stringify(input.plugins),
+    sort,
+  )
+  return getAgent(id)!
+}
+
 export function listPlugins(): PluginDef[] {
   const rows = db.prepare(
     `SELECT * FROM plugins

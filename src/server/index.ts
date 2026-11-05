@@ -6,9 +6,11 @@ import path from 'node:path'
 import type { Mode } from '../shared/types.js'
 import {
   addDocument,
+  createAgent,
   deleteDocument,
   getBootstrap,
   getDb,
+  getProject,
   getRun,
   getRunDetail,
   initDb,
@@ -114,6 +116,40 @@ app.post('/api/kb/search', async (request) => {
   const bootstrap = getBootstrap(resolveMode())
   const hits = searchKnowledge(getDb(), bootstrap.project.id, query, Math.min(body?.limit ?? 6, 12))
   return { hits }
+})
+
+app.post('/api/agents', async (request, reply) => {
+  const body = request.body as {
+    name?: string
+    role?: 'specialist'
+    title?: string
+    description?: string
+    color?: string
+    model?: string
+    temperature?: number
+    systemPrompt?: string
+    tools?: string[]
+    plugins?: string[]
+  } | undefined
+  if (!body?.name?.trim() || !body?.title?.trim()) {
+    return reply.code(400).send({ error: 'name 和 title 不能为空。' })
+  }
+  const agent = createAgent({
+    projectId: getProject().id,
+    name: body.name.trim(),
+    role: body.role ?? 'specialist',
+    title: body.title.trim(),
+    description: body.description?.trim() || '按需加入的专家节点，负责独立审查与补充判断。',
+    color: body.color || '#5B5F9E',
+    model: body.model || process.env.AGENTLOOM_MODEL || 'deepseek-chat',
+    temperature: typeof body.temperature === 'number' ? body.temperature : 0.3,
+    systemPrompt:
+      body.systemPrompt ||
+      '你是团队按需加入的专家。阅读上游输出，指出被忽略的风险、证据缺口与需要复核的判断。只输出 JSON。',
+    tools: body.tools ?? [],
+    plugins: body.plugins ?? [],
+  })
+  return reply.code(201).send({ agent })
 })
 
 app.put('/api/agents/:id', async (request, reply) => {

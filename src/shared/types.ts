@@ -1,6 +1,6 @@
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'waiting' | 'skipped'
-export type AgentRole = 'planner' | 'researcher' | 'analyst' | 'writer' | 'verifier' | 'editor'
+export type AgentRole = 'planner' | 'researcher' | 'analyst' | 'writer' | 'verifier' | 'editor' | 'specialist'
 export type NodeKind = 'input' | 'agent' | 'verifier' | 'output'
 export type Mode = 'mock' | 'live'
 
@@ -101,10 +101,21 @@ export interface Usage {
   cost: number
 }
 
+export type IssueType = 'citation' | 'number' | 'logic' | 'coverage' | 'wording' | 'other'
+
+export interface VerdictRoute {
+  type: IssueType
+  target: string
+  message: string
+}
+
 export interface Verdict {
   passed: boolean
   score: number
   issues: string[]
+  routes?: VerdictRoute[]
+  selectedTarget?: string
+  selectedType?: IssueType
   claims?: Array<{
     claim: string
     citation: string | null
