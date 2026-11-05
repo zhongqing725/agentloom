@@ -109,7 +109,7 @@ function Sidebar({ onSettings, onClose }: { onSettings: () => void; onClose?: ()
             size="small"
             aria-label="关闭导航"
             onClick={onClose}
-            className="ms-auto border-transparent bg-transparent text-text-on-sidebar-muted shadow-none hover:bg-surface-sidebar-hover hover:text-text-on-sidebar"
+            className="ms-auto border-transparent bg-transparent text-text-on-sidebar-muted shadow-none hover:bg-surface-sidebar-hover hover:text-text-on-sidebar lg:hidden"
           />
         )}
       </div>
