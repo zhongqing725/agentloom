@@ -181,6 +181,58 @@ function Sidebar({ onSettings, onClose }: { onSettings: () => void; onClose?: ()
   )
 }
 
+function TopNav({ onSettings, onMenu }: { onSettings: () => void; onMenu: () => void }) {
+  const { data } = useApp()
+
+  return (
+    <header className="swiss-header">
+      <div className="swiss-header-inner">
+        <NavLink to="/" className="swiss-brand" aria-label="织序 AgentLoom 首页">
+          <span className="swiss-brand-mark">织</span>
+          <span className="swiss-brand-word">
+            织序
+            <span>AgentLoom</span>
+          </span>
+        </NavLink>
+
+        <nav className="swiss-nav" aria-label="主导航">
+          {NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => cx('swiss-nav-link', isActive && 'is-active')}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="swiss-actions">
+          <span className="swiss-mode">
+            <span className={cx('swiss-mode-dot', data?.mode === 'live' && 'live')} aria-hidden />
+            {data?.mode === 'live' ? 'LIVE' : 'MOCK'}
+          </span>
+          <TooltipTrigger>
+            <IconButton icon={RiSettings3Line} size="small" aria-label="设置" onClick={onSettings} />
+            <Tooltip>模型设置</Tooltip>
+          </TooltipTrigger>
+          <span className="swiss-header-run">
+            <StartRunButton size="small" />
+          </span>
+          <IconButton
+            icon={RiMenuLine}
+            size="small"
+            aria-label="打开导航"
+            onClick={onMenu}
+            className="swiss-menu-button"
+          />
+        </div>
+      </div>
+    </header>
+  )
+}
+
 function StartRunButton({ size = 'medium' }: { size?: 'medium' | 'small' }) {
   const { data } = useApp()
   const [open, setOpen] = useState(false)
@@ -400,15 +452,44 @@ function Shell() {
 
   return (
     <div className="app-ground min-h-dvh font-sans text-text-primary">
-      <aside className="fixed inset-y-2.5 start-2.5 z-50 hidden w-[240px] lg:block">
-        <Sidebar onSettings={() => setSettingsOpen(true)} />
-      </aside>
+      <TopNav
+        onSettings={() => setSettingsOpen(true)}
+        onMenu={() => setMobileNav(true)}
+      />
+
+      <div className="swiss-projectbar">
+        <div className="swiss-projectbar-inner">
+          <span className="swiss-project-page">{title}</span>
+          <span className="swiss-project-sep" aria-hidden />
+          <span className="swiss-project-name">{data.project.name}</span>
+          <span className="swiss-project-scenario">{data.project.scenario}</span>
+          <div className="swiss-project-stats">
+            <span>{data.stats.agents} AGENTS</span>
+            <span>{data.stats.docs} DOCS</span>
+            <span>{data.documents.reduce((sum, doc) => sum + doc.chunkCount, 0)} CHUNKS</span>
+            <span>{data.runs.length} RUNS</span>
+          </div>
+        </div>
+      </div>
+
+      <main className="swiss-main">
+        <Routes>
+          <Route path="/" element={<Overview />} />
+          <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/workflow" element={<WorkflowPage />} />
+          <Route path="/training" element={<Training />} />
+          <Route path="/runs/:id" element={<RunPage />} />
+          <Route path="/evals" element={<Evals />} />
+        </Routes>
+      </main>
+
       <BoardModal
         isOpen={mobileNav}
         onOpenChange={setMobileNav}
         aria-label="主导航"
         overlayClassName="items-stretch justify-start p-0 sm:p-0"
-        panelClassName="h-full max-w-[268px]"
+        panelClassName="h-full max-w-[280px]"
         className="h-full gap-0 rounded-none border-0 bg-transparent py-0 shadow-none"
       >
         <Sidebar
@@ -419,52 +500,6 @@ function Shell() {
           onClose={() => setMobileNav(false)}
         />
       </BoardModal>
-
-      <div className="min-h-dvh lg:ps-[262px]">
-        <header className="sticky top-2.5 z-30 mx-2.5 flex h-14 items-center gap-3 rounded-[16px] px-3 glass sm:px-4 lg:me-2.5">
-          <IconButton
-            icon={RiMenuLine}
-            size="small"
-            aria-label="打开导航"
-            aria-expanded={mobileNav}
-            aria-haspopup="dialog"
-            onClick={() => setMobileNav(true)}
-            className="lg:hidden"
-          />
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-text-primary">{title}</span>
-            <span className="hidden h-3.5 w-px bg-border-button-default sm:block" aria-hidden />
-            <span className="hidden truncate text-[12px] text-text-tertiary sm:block">{data.project.name}</span>
-          </div>
-
-          <div className="ms-auto flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 rounded-full bg-background-tertiary-default px-2.5 py-1 text-[11px] text-text-secondary sm:flex">
-              <span
-                className={cx('size-1.5 rounded-full', data.mode === 'live' ? 'bg-status-lime-text' : 'bg-status-yellow-text')}
-                aria-hidden
-              />
-              {data.mode === 'live' ? 'Live' : 'Mock'}
-            </span>
-            <TooltipTrigger>
-              <IconButton icon={RiSettings3Line} size="small" aria-label="设置" onClick={() => setSettingsOpen(true)} />
-              <Tooltip>模型设置</Tooltip>
-            </TooltipTrigger>
-            <StartRunButton size="small" />
-          </div>
-        </header>
-
-        <main className="mx-auto w-full max-w-[1280px] px-3 pb-16 pt-6 sm:px-5 lg:px-4">
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/knowledge" element={<Knowledge />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/workflow" element={<WorkflowPage />} />
-            <Route path="/training" element={<Training />} />
-            <Route path="/runs/:id" element={<RunPage />} />
-            <Route path="/evals" element={<Evals />} />
-          </Routes>
-        </main>
-      </div>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

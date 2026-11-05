@@ -81,6 +81,7 @@ export const api = {
   activateVersion: (versionId: string) =>
     request<{ agent: Agent; version: TrainingVersion }>(`/api/training/versions/${versionId}/activate`, {
       method: 'POST',
+      body: JSON.stringify({}),
     }),
   reportUrl: (id: string) => `/api/runs/${id}/report`,
 }

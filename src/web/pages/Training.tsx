@@ -33,10 +33,14 @@ export default function Training() {
   const [activatingVersion, setActivatingVersion] = useState<string | null>(null)
   const [error, setError] = useState('')
 
-  const agent = useMemo(
-    () => data?.agents.find((item) => item.id === agentId) ?? data?.agents[0],
-    [data, agentId],
-  )
+  const agent = useMemo(() => {
+    const list = data?.agents ?? []
+    // Open on a node that actually has an eval set, so the page never lands on
+    // an empty state when the operator arrives.
+    return list.find((item) => item.id === agentId)
+      ?? list.find((item) => item.id === 'agent-writer')
+      ?? list[0]
+  }, [data, agentId])
 
   const load = useCallback(async (id: string) => {
     try {
