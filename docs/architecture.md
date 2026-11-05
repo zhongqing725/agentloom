@@ -1,5 +1,7 @@
 # 织序 AgentLoom 技术架构
 
+> 本文聚焦运行时、调度、验证与数据。前端设计系统、启动/交接步骤见 [handover.md](./handover.md)；BoardUI 迁移细节见 [boardui-migration.md](./boardui-migration.md)。
+
 ## 1. 设计原则
 
 1. **节点是编排的最小单位。** 团队不是一团 prompt，而是一张有依赖、有端口、有状态的图。

@@ -15,7 +15,7 @@
 - 组件安装在 `src/components/**`，基础样式在 `src/styles/**`，通过 `@/* -> src/*` 别名引用。
 - Tailwind v4 经由 `@tailwindcss/postcss` 接入，配置在 `postcss.config.mjs`；`src/web/main.tsx` 先加载 `src/styles/globals.css`。
 - `DirectionProvider locale="zh-CN"` 包住应用；BoardUI 的 `"use client"` 指令在 Vite 下被忽略，没有使用任何 Next.js API、Server Component、next/font 或 next/navigation。
-- 已安装并使用的免费组件：Button、IconButton、Badge、Tabs/PillTab、Modal、Input、Textarea、Tooltip、Spinner、Switch（以及它们必须的 Direction、CloseButton、ScrollFade 等基础依赖）。
+- 已安装并使用的免费组件：Button、IconButton、Badge、Tabs（segmented 变体）、Modal、Input、Textarea、Tooltip、Spinner、Switch（以及它们必须的 Direction、CloseButton、ScrollFade 等基础依赖）。
 - 迁移前做过最小 Vite spike，验证 React Aria 的 Modal、Tabs、Switch、Tooltip 在 Vite 生产构建与浏览器中可运行，随后才改业务页面。
 
 ### 环境限制
@@ -43,7 +43,7 @@ Token 定义在 `src/styles/agentloom-theme.css`：
 | Agent 团队 | Agent 卡、能力插件库、编辑 Modal、插件 Switch。 |
 | 评测 | 指标卡、自回环观察条、运行历史 Badge / StatusPill。 |
 | 编排画布 | 保留 React Flow 与自定义节点；工具栏、插件条、检查器用 Button / Switch / Tooltip；画布图元用语义 token；连线与环路校验保留。 |
-| 运行详情 | PillTab 分段控件；图谱/报告/账本/核查/事件五视图；证据账本 master-detail；节点输出 Modal；SSE 实时刷新。 |
+| 运行详情 | BoardUI Tabs segmented 控件；图谱/报告/账本/核查/事件五视图；证据账本 master-detail；节点输出 Modal；SSE 实时刷新。 |
 
 清理：
 
@@ -51,6 +51,14 @@ Token 定义在 `src/styles/agentloom-theme.css`：
 - `src/web/theme-refresh.css` 只保留 React Flow 画布、handle、controls、edge 样式。
 - 移除 `lucide-react` 依赖。
 - 新增 `boardui.json`，让后续 BoardUI CLI 继续写入 `src/`。
+
+### 迁移后的交互完善（`95beba6`）
+
+- 运行页的五个 Tab 改为 BoardUI `Tabs` 的 **segmented** 变体，补齐 React Aria 的 Tab/TabPanel 语义。
+- 移动导航改为 BoardUI `Modal` 抽屉形态；关闭按钮、Esc 和焦点语义由 React Aria 管理。
+- RunPage 增加运行 ID 守卫：快速切换 `/runs/:id` 时不会混入上一次运行的节点选择、事件或异步响应。
+- 按压动效从缩放改为变暗；玻璃高光、skeleton、遮罩等光效统一走语义 token。
+- 这批完善在截图验收之后提交，现有截图的板块布局不变，但分页控件与移动导航的细微外观可能略早于最新代码。
 
 ## 验证
 
@@ -72,6 +80,8 @@ pnpm build       # pass，仅有 Vite >500 kB chunk 提示
 - 表单：团队保存写回 API；通过顶栏“新建运行”启动真实运行并跳转 `/runs/:id`
 
 ## 截图
+
+以下截图使用 Mock 演示数据，在迁移验收阶段生成；用于整体视觉与布局验收。
 
 ### 1440 × 900
 
@@ -106,7 +116,7 @@ pnpm build       # pass，仅有 Vite >500 kB chunk 提示
 
 ## 未解决风险
 
-1. **Bundle size**：BoardUI + React Aria 使生产 JS 约 950 kB（gzip 约 300 kB），仍有 Vite >500 kB 警告。若比赛环境关注首屏体积，可以按路由做 `React.lazy` 代码分割。
+1. **Bundle size**：BoardUI + React Aria 使最终生产 JS 约 987 kB（gzip 约 305 kB），CSS 约 166 kB（gzip 约 27 kB），仍有 Vite >500 kB 警告。若比赛环境关注首屏体积，可以按路由做 `React.lazy` 代码分割。
 2. **BoardUI CLI 无法访问 registry**：本次用 MCP installer 落地；`npx boardui add` 在恢复网络前可能仍然失败。`boardui.json` 已写好，网络恢复后可直接沿用。
 3. **Dark mode 未启用**：BoardUI 有 `.dark` token 体系，但本产品按需求只交付 light 界面，未提供切换与暗色视觉验收。
 4. **移动画布**：390px 下用 0.62 初始缩放 + pan 而不是 fit 全图，避免节点缩到不可读；需要用户拖动画布查看全流程。检查器在桌面会自动向左平移选中节点，移动端以底部抽屉呈现。

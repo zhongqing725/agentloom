@@ -6,7 +6,16 @@
 
 它不只是把几个 Agent 串起来，而是把“团队怎么组、每个节点怎么想、结果怎么验”变成可配置、可观察、可回放的运行时能力。
 
-![总览](docs/assets/overview.png)
+> 交接请先读 [docs/handover.md](docs/handover.md)；文档导航见 [docs/README.md](docs/README.md)。
+
+![总览](docs/boardui/desktop/01-overview.png)
+
+## 技术栈
+
+- **前端**：React 19、Vite 7、TypeScript、React Router 7、React Flow 12、BoardUI 源组件、Tailwind CSS v4（PostCSS）、Remix Icon。
+- **后端**：Fastify 5、SQLite（Node `node:sqlite`）、SSE。
+- **设计系统**：BoardUI 语义 token，钛白 / 石墨 / 单一铜色；详细信息与截图见 [BoardUI 迁移记录](docs/boardui-migration.md)。
+- 不使用 Next.js、Server Component、next/font 或 next/navigation；这是纯 Vite 前端 + Fastify API。
 
 ## 为什么是“节点能力插件”
 
@@ -85,6 +94,15 @@ pnpm start
 
 首次启动会自动建库、写入 6 篇演示资料、8 个 Agent 和示例工作流。数据在 `data/agentloom.db`，删除 `data/` 即可重置。
 
+开发验证：
+
+```bash
+pnpm typecheck
+pnpm build
+```
+
+如果 5173 页面显示成无样式的裸 HTML，通常是旧的 Vite 进程在 `postcss.config.mjs` 出现之前启动的；重启 `dev:web` 即可，不需要改页面代码。
+
 ## 接入真实模型
 
 默认是 **Mock 演示模式**，无需 API Key 即可完整跑通流程，适合录制与离线演示。
@@ -98,7 +116,7 @@ AGENTLOOM_MODEL=deepseek-chat
 pnpm dev
 ```
 
-设置页保存的 Key 只存在当前服务进程内，不写入数据库。
+设置页保存的 Key 只存在当前服务进程内，不写入数据库；重启服务后按环境变量重新判断模式。
 
 ## 架构
 
@@ -137,15 +155,20 @@ pnpm dev
 
 | 材料 | 文件 |
 |---|---|
+| **交接说明（接手先读）** | [docs/handover.md](docs/handover.md) |
 | 项目白皮书（Word / PDF） | `deliverables/织序AgentLoom-项目白皮书.docx` / `.pdf` |
 | 项目介绍 PPT（PPTX / PDF） | `deliverables/织序AgentLoom-项目介绍.pptx` / `.pdf` |
 | 3 分钟演示脚本 | [docs/demo-script.md](docs/demo-script.md) |
 | 技术架构 | [docs/architecture.md](docs/architecture.md) |
+| BoardUI 迁移记录 | [docs/boardui-migration.md](docs/boardui-migration.md) |
+| 当前 UI 截图 | [docs/boardui/](docs/boardui/) |
 | 白皮书源稿 | [docs/white-paper.md](docs/white-paper.md) |
+| 文档索引 | [docs/README.md](docs/README.md) |
 | 提交清单 | `deliverables/提交清单.md` |
 
 > 白皮书与 PPT 中的团队名称、成员姓名目前是 `【待填】` 占位，提交前替换为报名信息。
 > 演示数据为模拟整理，已在界面与文档中标注；真实模型成本需接入 DeepSeek 后复测。
+> 已生成的白皮书/PPT 可能仍使用迁移前截图；若要同步当前 BoardUI 界面，请重新截图并重新导出。
 
 ## 目录
 
@@ -159,13 +182,24 @@ src/
     db.ts          SQLite 数据访问
     index.ts       Fastify API + SSE
   web/
+    App.tsx        应用 shell、导航、运行/设置 Modal
     pages/         总览、知识库、团队、编排、运行、评测
-    components/    React Flow 节点、UI 组件
+    components/    React Flow 画布、自定义节点、共享 UI
+  components/      BoardUI 源组件（免费组件）
+  styles/          BoardUI tokens + AgentLoom 主题
+  utils/           cx / directional icon
   shared/
     types.ts       领域类型
 docs/
+  handover.md      交接说明
+  README.md        文档索引
   architecture.md  技术架构
+  boardui-migration.md  BoardUI 迁移记录
   demo-script.md   3 分钟演示脚本
+  boardui/         当前 UI 桌面/移动截图
+  assets/          旧版截图
+boardui.json       BoardUI 路径/别名配置
+postcss.config.mjs Tailwind v4 PostCSS 配置
 ```
 
 ## 演示场景
