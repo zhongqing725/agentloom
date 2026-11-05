@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Agent, GraphEdge, GraphNode, KnowledgeDoc, PluginDef, Workflow } from '../shared/types.js'
+import type { Agent, EvalFixture, GraphEdge, GraphNode, KnowledgeDoc, PluginDef, Workflow } from '../shared/types.js'
 
 const DEMO_NOTE = '> 演示知识库资料。以下数据为模拟整理，用于展示检索、引用与核验流程，不构成真实投资依据。'
 
@@ -593,4 +593,214 @@ export function chunkDocument(content: string): string[] {
     if (current.trim()) chunks.push(current.trim())
   }
   return chunks
+}
+
+/* ---------------------------------------------------------------------------
+ * Agent training fixtures
+ *
+ * A training case freezes the upstream context one agent would have received
+ * in a real run, so two prompt versions can be compared on the same input.
+ * ------------------------------------------------------------------------ */
+
+const TRAINING_EVIDENCE = [
+  {
+    ref: 'M1',
+    docId: 'doc-market',
+    docTitle: 'AI 眼镜市场：渗透率拐点前的三个信号',
+    quote: '2024 年全球 AI 眼镜出货量约 230 万台，同比增长 210%。IDC 预计 2028 年达到 3200 万台，2024—2028 年复合增速约 65%。',
+  },
+  {
+    ref: 'L1',
+    docId: 'doc-chain',
+    docTitle: '产业链拆解：谁拿走 AI 眼镜的价值',
+    quote: '整机 BOM 约 160 美元：SoC 占 32%，光学与摄像头占 18%，组装占 14%。',
+  },
+  {
+    ref: 'L2',
+    docId: 'doc-chain',
+    docTitle: '产业链拆解：谁拿走 AI 眼镜的价值',
+    quote: '整机品牌毛利率约 25%—35%，组装代工约 8%—12%，光学模组约 35%—45%，低功耗 SoC 约 45%—55%。',
+  },
+  {
+    ref: 'L3',
+    docId: 'doc-chain',
+    docTitle: '产业链拆解：谁拿走 AI 眼镜的价值',
+    quote: '以 2028 年 3200 万台、ASP 249 美元计算，整机市场规模约 79.7 亿美元，对应 BOM 价值池约 40 亿美元。',
+  },
+  {
+    ref: 'M2',
+    docId: 'doc-market',
+    docTitle: 'AI 眼镜市场：渗透率拐点前的三个信号',
+    quote: '2024 年 AI 眼镜平均售价约 299 美元，随着 BOM 每年下降 8%—12%，2027 年主流产品 ASP 可能降至 249 美元。',
+  },
+  {
+    ref: 'C1',
+    docId: 'doc-competition',
+    docTitle: '竞争格局：Meta 领跑，中国厂商的三条路径',
+    quote: 'Ray-Ban Meta 系列份额约 62%，优势来自雷朋的品牌与全球 3000 多家门店。',
+  },
+  {
+    ref: 'C2',
+    docId: 'doc-competition',
+    docTitle: '竞争格局：Meta 领跑，中国厂商的三条路径',
+    quote: '雷鸟创新份额约 12%，Rokid 约 9%。2026—2027 年，行业可能进入第一轮洗牌。',
+  },
+]
+
+const ANALYST_DATA = {
+  thesis: 'AI 眼镜正从极客玩具走向大众终端，价值池向光学与 SoC 集中。',
+  insights: [],
+  scenarios: [
+    {
+      id: 'base',
+      name: '稳健情景',
+      stance: '渗透率线性提升，优先配置确定性更高的上游。',
+      points: ['2028 年全球出货量约 3200 万台，复合增速约 65% [M1]', '光学与 SoC 合计拿走 BOM 价值池约一半 [L1]'],
+      score: 0.88,
+      rationale: '证据覆盖最完整。',
+    },
+    {
+      id: 'bull',
+      name: '进取情景',
+      stance: 'AI 助手成为手机替代入口，出货量超预期。',
+      points: ['2028 年出货量上探 4500 万台'],
+      score: 0.79,
+      rationale: '上行空间大，但假设更激进。',
+    },
+    {
+      id: 'bear',
+      name: '反方情景',
+      stance: '重量、续航与隐私制约，增速低于预期。',
+      points: ['退货率约 15%，30 日留存仅 21%'],
+      score: 0.83,
+      rationale: '风险识别到位。',
+    },
+  ],
+  recommendation: '优先关注单机价值量高、格局集中、毛利率稳定的光学与低功耗 SoC。',
+  disagreements: ['市场研究员与反方情景对出货量假设存在分歧。'],
+  judge: '裁判按证据覆盖、假设可检验性、行动性三项打分，选择稳健情景作为主判断。',
+}
+
+const ANALYST_CITATIONS = TRAINING_EVIDENCE.map((item) => ({
+  id: item.ref,
+  docId: item.docId,
+  docTitle: item.docTitle,
+  quote: item.quote,
+  score: 0.8,
+}))
+
+const WRITER_FIXTURE: EvalFixture = {
+  evidence: TRAINING_EVIDENCE,
+  upstream: [
+    {
+      nodeId: 'analyst',
+      title: '首席分析师',
+      data: ANALYST_DATA as unknown as Record<string, unknown>,
+      text: JSON.stringify(ANALYST_DATA),
+      citations: ANALYST_CITATIONS,
+    },
+  ],
+  iteration: 0,
+}
+
+const REVISION_FIXTURE: EvalFixture = {
+  ...WRITER_FIXTURE,
+  feedback: '[citation → 竞争情报员] 结论没有引用证据。\n[number → 首席分析师] 数字 5000 在证据中找不到对应值。',
+}
+
+const FINAL_REPORT = `# AI 眼镜产业链投资价值研究
+
+> 研究任务：AI 眼镜产业链投研
+> 版本：v2（已核查）
+
+## 一、核心结论
+
+1. AI 眼镜正处于渗透率拐点前，2024—2028 年出货量复合增速约 65% [M1]。
+2. 价值池向光学与 SoC 集中，二者合计约占 BOM 价值池的一半 [L1]。
+
+## 二、市场
+
+2024 年全球 AI 眼镜出货量约 230 万台，同比增长 210% [M1]。预计 2028 年全球出货量约 3200 万台 [M1]。
+
+## 三、产业链
+
+一台 299 美元的 AI 眼镜，BOM 约 160 美元 [L1]。整机品牌毛利率约 25%—35%，低功耗 SoC 约 45%—55% [L2]。
+
+## 四、竞争
+
+Ray-Ban Meta 系列份额约 62%，全球 3000 多家门店 [C1]。雷鸟、Rokid 在不同价格带竞争 [C2]。
+
+## 证据索引
+
+- [M1] AI 眼镜市场：2024 年全球 AI 眼镜出货量约 230 万台。
+`
+
+const EDITOR_FIXTURE: EvalFixture = {
+  evidence: TRAINING_EVIDENCE,
+  upstream: [
+    {
+      nodeId: 'writer',
+      title: '报告撰写师',
+      text: FINAL_REPORT,
+      data: { markdown: FINAL_REPORT, version: 'v2' },
+      citations: ANALYST_CITATIONS,
+    },
+    {
+      nodeId: 'verifier',
+      title: '事实核查员',
+      data: { passed: true, score: 1, issues: [], routes: [] },
+      verdict: { passed: true, score: 1, issues: [], routes: [], claims: [] },
+    },
+  ],
+  iteration: 1,
+}
+
+const TRAINING_CASES = [
+  {
+    id: 'case-writer-first',
+    agentId: 'agent-writer',
+    title: '首稿：带引用的投研报告',
+    input: '请生成一份面向投资决策的 AI 眼镜产业链研究报告，重点回答市场空间、价值链分配、竞争格局与主要风险。',
+    fixture: WRITER_FIXTURE,
+  },
+  {
+    id: 'case-writer-revision',
+    agentId: 'agent-writer',
+    title: '修订稿：带着问题清单重写',
+    input: '请生成一份面向投资决策的 AI 眼镜产业链研究报告，重点回答市场空间、价值链分配、竞争格局与主要风险。',
+    fixture: REVISION_FIXTURE,
+  },
+  {
+    id: 'case-editor-final',
+    agentId: 'agent-editor',
+    title: '终稿：核查信息与结构',
+    input: '请对已核查的报告做终审，补充核查结论与出品信息。',
+    fixture: EDITOR_FIXTURE,
+  },
+]
+
+/**
+ * Idempotent: inserts the training eval set and one active v1 per agent the
+ * first time the database is opened, so an existing data/ directory upgrades
+ * in place without a reset.
+ */
+export function seedTraining(db: DatabaseSync) {
+  const now = new Date().toISOString()
+  // Upsert: keeps the seeded eval set in sync with the fixtures in code while
+  // leaving anything a user added untouched.
+  for (const item of TRAINING_CASES) {
+    db.prepare(
+      `INSERT INTO eval_cases (id, agent_id, title, input, fixture_json, created_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title = excluded.title, input = excluded.input, fixture_json = excluded.fixture_json`,
+    ).run(item.id, item.agentId, item.title, item.input, JSON.stringify(item.fixture), now)
+  }
+
+  const agents = db.prepare('SELECT id, system_prompt FROM agents').all() as Array<{ id: string; system_prompt: string }>
+  for (const agent of agents) {
+    const existing = (db.prepare('SELECT COUNT(*) AS n FROM agent_versions WHERE agent_id = ?').get(agent.id) as { n: number }).n
+    if (existing > 0) continue
+    db.prepare(
+      'INSERT INTO agent_versions (id, agent_id, version, system_prompt, score, cases_json, note, is_active, created_at) VALUES (?, ?, 1, ?, NULL, ?, ?, 1, ?)',
+    ).run(`ver-${agent.id}-1`, agent.id, agent.system_prompt, '[]', '初始提示词', now)
+  }
 }

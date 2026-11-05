@@ -54,11 +54,11 @@ type LoomEdgeData = {
   [key: string]: unknown
 }
 
-const KIND_BAR: Record<string, string> = {
-  input: 'bg-text-tertiary',
-  agent: 'bg-accent-500',
-  verifier: 'bg-text-primary',
-  output: 'bg-accent-600',
+const KIND_LABEL: Record<string, string> = {
+  input: 'INPUT',
+  agent: 'AGENT',
+  verifier: 'VERIFIER',
+  output: 'OUTPUT',
 }
 
 function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
@@ -73,15 +73,15 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
           ? RiShieldCheckLine
           : RiRobot2Line
   const acceptsPlugin = Boolean(data.droppable)
+  const running = status === 'running' || status === 'queued'
 
   return (
     <div
       className={cx(
-        'agent-node group relative flex w-[160px] rounded-2xl border bg-background-primary-default shadow-card',
-        'transition-[border-color,box-shadow] duration-150 hover:shadow-md',
-        selected ? 'border-accent-500 ring-2 ring-accent-500/20' : 'border-border-button-default',
-        status === 'running' && 'border-accent-500 ring-2 ring-accent-500/15',
-        status === 'completed' && 'border-status-lime-text/30',
+        'loom-node group relative flex w-[168px] flex-col rounded-[16px] border px-3 py-2.5 backdrop-blur-xl',
+        'transition-[border-color,box-shadow] duration-200',
+        'bg-background-primary-default shadow-card',
+        selected ? 'border-accent-400' : 'border-border-button-default hover:border-border-button-hover',
         status === 'failed' && 'border-status-rose-text/40',
         status === 'waiting' && 'border-status-orange-text/40',
         dragOver && 'border-accent-500 ring-2 ring-accent-500/25',
@@ -109,65 +109,57 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
       }}
     >
       {data.kind !== 'input' && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          isConnectable={data.connectable !== false}
-          className={cx('canvas-handle', data.connectable === false && 'canvas-handle-idle')}
-        />
+        <Handle type="target" position={Position.Left} isConnectable={data.connectable !== false} />
       )}
-      <div className={cx('w-1 shrink-0 rounded-s-2xl', KIND_BAR[data.kind] ?? 'bg-accent-500')} aria-hidden />
-      <div className="min-w-0 flex-1 px-3 py-2.5">
-        <div className="flex items-center gap-1.5">
-          <span className="grid size-6 shrink-0 place-items-center rounded-md bg-background-tertiary-default text-accent-600">
-            <Icon className="size-3.5" aria-hidden />
-          </span>
-          <span className="text-caption-2-semibold uppercase tracking-[0.12em] text-text-tertiary">
-            {data.kind === 'agent' ? 'Agent' : data.kind}
-          </span>
-          {status === 'running' && <RiLoader4Line className="ms-auto size-3.5 animate-spin text-accent-600" aria-label="执行中" />}
-          {status === 'queued' && (
-            <span className="ms-auto rounded-sm bg-status-yellow-background px-1 py-0.5 text-caption-2-semibold text-status-yellow-text">
-              排队
-            </span>
-          )}
+
+      <div className="flex items-center gap-1.5">
+        <Icon className={cx('size-3 shrink-0', running ? 'text-accent-500' : 'text-text-placeholder')} aria-hidden />
+        <span className="text-[9px] font-medium tracking-[0.12em] text-text-placeholder">
+          {KIND_LABEL[data.kind] ?? data.kind.toUpperCase()}
+        </span>
+        <span className="ms-auto flex items-center gap-1.5">
+          {running && <RiLoader4Line className="size-3 animate-spin text-accent-500" aria-label="执行中" />}
           {data.score !== undefined && (
-            <span className="ms-auto rounded-sm bg-status-lime-background px-1 py-0.5 text-caption-2-semibold text-status-lime-text">
-              {Math.round(data.score * 100)}
-            </span>
+            <span className="text-[9px] tabular-nums text-status-lime-text">{Math.round(data.score * 100)}</span>
           )}
-        </div>
-        <div className="mt-2 truncate text-body-2-medium text-text-primary">{data.label}</div>
-        {data.subtitle && <div className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">{data.subtitle}</div>}
-        <div className="mt-2 flex min-h-4 items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1.5 text-text-tertiary">
-            {(data.pluginDefs ?? []).slice(0, 3).map((plugin) => (
-              <span key={plugin.id} title={plugin.name}>
-                <PluginIcon name={plugin.icon} size={12} />
-              </span>
-            ))}
-            {(data.pluginDefs ?? []).length > 3 && (
-              <span className="font-mono text-caption-2-medium">+{(data.pluginDefs ?? []).length - 3}</span>
+          <span
+            className={cx(
+              'size-1.5 rounded-full',
+              status === 'completed' ? 'bg-status-lime-text' : running ? 'bg-accent-500' : status === 'failed' ? 'bg-status-rose-text' : status === 'waiting' ? 'bg-status-orange-text' : 'bg-text-placeholder',
             )}
-          </div>
-          {data.iteration !== undefined && data.iteration > 0 && (
-            <span className="rounded-sm bg-accent-100 px-1 py-0.5 font-mono text-caption-2-semibold text-accent-700">
-              L{data.iteration + 1}
+            aria-hidden
+          />
+        </span>
+      </div>
+
+      <div className="mt-1.5 truncate text-[12.5px] font-medium tracking-[-0.01em] text-text-primary">{data.label}</div>
+      {data.subtitle && <div className="mt-0.5 truncate text-[10.5px] text-text-tertiary">{data.subtitle}</div>}
+
+      <div className="mt-2 flex min-h-3.5 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5 text-text-placeholder">
+          {(data.pluginDefs ?? []).slice(0, 3).map((plugin) => (
+            <span key={plugin.id} title={plugin.name}>
+              <PluginIcon name={plugin.icon} size={11} />
             </span>
+          ))}
+          {(data.pluginDefs ?? []).length > 3 && (
+            <span className="text-[9px] tabular-nums">+{(data.pluginDefs ?? []).length - 3}</span>
           )}
         </div>
+        {data.iteration !== undefined && data.iteration > 0 && (
+          <span className="rounded bg-accent-100 px-1 text-[9px] tabular-nums text-accent-700">
+            L{data.iteration + 1}
+          </span>
+        )}
       </div>
+
       {data.kind !== 'output' && (
-        <Handle
-          type="source"
-          position={Position.Right}
-          isConnectable={data.connectable !== false}
-          className={cx('canvas-handle', data.connectable === false && 'canvas-handle-idle')}
-        />
+        <Handle type="source" position={Position.Right} isConnectable={data.connectable !== false} />
       )}
+
       {dragOver && (
-        <span className="pointer-events-none absolute inset-1.5 z-20 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent-500 bg-background-primary-default/95 text-caption-1-semibold text-accent-700">
-          <RiPlugLine className="size-4" aria-hidden /> 松开挂载
+        <span className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-accent-500 bg-background-primary-active text-[10px] font-medium text-accent-700">
+          <RiPlugLine className="size-3.5" aria-hidden /> 松开挂载
         </span>
       )}
     </div>
@@ -195,28 +187,27 @@ function LoomEdgeView({
     targetY,
     sourcePosition,
     targetPosition,
-    borderRadius: 14,
+    borderRadius: 16,
   })
   const edgeData = data as LoomEdgeData | undefined
-  const loop = edgeData?.kind === 'loop'
 
   return (
     <>
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} interactionWidth={24} />
       <EdgeLabelRenderer>
         <div
-          className={cx('pointer-events-none absolute z-10 flex items-center gap-1', selected && 'z-20')}
+          className={cx('nodrag nopan pointer-events-none absolute z-10 flex items-center gap-1', selected && 'z-20')}
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
         >
           {label ? (
-            <span className="whitespace-nowrap rounded-md border border-separator-border bg-background-primary-default px-1.5 py-0.5 text-caption-2-medium text-text-secondary shadow-xs">
+            <span className="whitespace-nowrap rounded-full border border-border-button-default bg-background-primary-active px-2 py-0.5 text-[9px] text-text-tertiary shadow-xs">
               {label}
             </span>
           ) : null}
           {selected && edgeData?.onDelete ? (
             <button
               type="button"
-              className="pointer-events-auto grid size-6 place-items-center rounded-full border-2 border-background-primary-default bg-accent-500 text-text-white shadow-md outline-none transition-colors duration-150 hover:bg-accent-600 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              className="pointer-events-auto grid size-5 place-items-center rounded-full bg-accent-500 text-text-white shadow-sm outline-none transition-colors duration-150 hover:bg-accent-600 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               title="删除这条连线"
               aria-label="删除这条连线"
               onMouseDown={(event) => event.stopPropagation()}
@@ -225,7 +216,7 @@ function LoomEdgeView({
                 edgeData?.onDelete?.(id)
               }}
             >
-              <RiCloseLine className="size-3.5" aria-hidden />
+              <RiCloseLine className="size-3" aria-hidden />
             </button>
           ) : null}
         </div>
@@ -332,11 +323,13 @@ export function WorkflowGraph({
       },
       style:
         edge.kind === 'loop'
-          ? { stroke: 'var(--color-accent-500)', strokeWidth: 1.4, strokeDasharray: '5 4' }
-          : { stroke: 'var(--color-border-button-active)', strokeWidth: 1.3 },
+          ? { stroke: 'var(--color-accent-500)', strokeWidth: 1.4, strokeDasharray: '5 4', opacity: 0.85 }
+          : { stroke: 'rgb(0 0 0 / 0.2)', strokeWidth: 1.2 },
       markerEnd: {
         type: MarkerType.ArrowClosed,
-        color: edge.kind === 'loop' ? 'var(--color-accent-500)' : 'var(--color-border-button-active)',
+        width: 14,
+        height: 14,
+        color: edge.kind === 'loop' ? 'var(--color-accent-500)' : 'rgb(0 0 0 / 0.32)',
       },
     }))
   }, [graph, onEdgesDelete, readOnly])
@@ -375,10 +368,10 @@ export function WorkflowGraph({
     const node = instance?.getNode(focusNodeId)
     if (!instance || !node) return
     const zoom = instance.getZoom()
-    const width = node.measured?.width ?? 160
-    const height = node.measured?.height ?? 120
-    const offset = 175 / zoom
-    instance.setCenter(node.position.x + width / 2 + offset, node.position.y + height / 2, {
+    const width = node.measured?.width ?? 168
+    const nodeHeight = node.measured?.height ?? 104
+    const offset = 180 / zoom
+    instance.setCenter(node.position.x + width / 2 + offset, node.position.y + nodeHeight / 2, {
       zoom,
       duration: 320,
     })
@@ -408,20 +401,17 @@ export function WorkflowGraph({
         edgesFocusable={false}
         elementsSelectable
         fitView={!narrow}
-        fitViewOptions={{ padding: 0.12, maxZoom: 1 }}
-        defaultViewport={narrow ? { x: 8, y: 20, zoom: 0.62 } : undefined}
+        fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
+        defaultViewport={narrow ? { x: 8, y: 20, zoom: 0.66 } : undefined}
         minZoom={0.28}
         maxZoom={1.4}
         connectionRadius={32}
-        connectionLineStyle={{ stroke: 'var(--color-accent-500)', strokeWidth: 1.8 }}
+        connectionLineStyle={{ stroke: 'var(--color-accent-500)', strokeWidth: 1.6 }}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: 'loom' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="rgb(0 0 0 / 0.1)" />
         <Controls showInteractive={false} />
-        <div className="agent-canvas-hint pointer-events-none absolute right-3 top-3 z-10 rounded-lg border border-separator-border bg-background-primary-default/90 px-2 py-1 text-caption-2-medium text-text-tertiary backdrop-blur md:hidden">
-          拖动画布 · 双指缩放
-        </div>
       </ReactFlow>
     </div>
   )

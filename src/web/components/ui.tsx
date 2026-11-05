@@ -12,6 +12,9 @@ import {
   RiCalculatorLine,
 } from '@remixicon/react'
 import { Modal as BoardModal, ModalBody, ModalFooter, ModalHeader } from '@/components/base/modal/modal'
+import { Chip } from '@/components/base/badges/chip'
+import type { ChipColor } from '@/components/base/badges/chip'
+import { ProgressBar } from '@/components/base/progress/progress'
 import { cx } from '@/utils/cx'
 import type { Citation, NodeStatus } from '../../shared/types'
 
@@ -35,32 +38,33 @@ export function PluginIcon({ name, size = 14, className }: { name: string; size?
   return <Icon size={size} className={className} aria-hidden />
 }
 
+/* ---------------------------------------------------------------------------
+ * Page header
+ * ------------------------------------------------------------------------ */
+
 export function PageHeader({
-  eyebrow,
   title,
-  description,
+  meta,
   actions,
 }: {
-  eyebrow?: string
   title: string
-  description?: string
+  meta?: string
   actions?: ReactNode
 }) {
   return (
-    <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+    <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        {eyebrow && (
-          <div className="text-caption-1-semibold uppercase tracking-[0.18em] text-accent-600">
-            {eyebrow}
-          </div>
-        )}
-        <h1 className="mt-2 text-title-1-medium text-text-primary sm:text-display-4-medium">{title}</h1>
-        {description && <p className="mt-2 max-w-2xl text-body-regular text-text-secondary">{description}</p>}
+        <h1 className="text-[19px] font-semibold leading-tight tracking-[-0.022em] text-text-primary">{title}</h1>
+        {meta && <div className="t-meta mt-1">{meta}</div>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   )
 }
+
+/* ---------------------------------------------------------------------------
+ * Surface
+ * ------------------------------------------------------------------------ */
 
 type SurfaceProps = HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'section' | 'article' | 'aside'
@@ -70,35 +74,74 @@ type SurfaceProps = HTMLAttributes<HTMLElement> & {
 
 export function Surface({ as: Tag = 'div', className, children, ...props }: SurfaceProps) {
   return (
-    <Tag
-      {...props}
-      className={cx(
-        'rounded-3xl border border-separator-border bg-background-primary-default shadow-card backdrop-blur-xl',
-        className,
-      )}
-    >
+    <Tag {...props} className={cx('glass', className)}>
       {children}
     </Tag>
   )
 }
 
-export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
+/* ---------------------------------------------------------------------------
+ * Section head
+ * ------------------------------------------------------------------------ */
+
+export function SectionHead({
+  title,
+  aside,
+  className,
+}: {
+  title: string
+  aside?: ReactNode
+  className?: string
+}) {
   return (
-    <div className={cx('text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600', className)}>
-      {children}
+    <div className={cx('flex items-baseline justify-between gap-4', className)}>
+      <h2 className="t-h2">{title}</h2>
+      {aside && <div className="flex items-baseline gap-3">{aside}</div>}
     </div>
   )
 }
 
-const STATUS_META: Record<string, { label: string; className: string }> = {
-  pending: { label: '待执行', className: 'bg-background-tertiary-default text-text-secondary' },
-  queued: { label: '排队中', className: 'bg-status-yellow-background text-status-yellow-text' },
-  running: { label: '执行中', className: 'bg-accent-100 text-accent-700' },
-  completed: { label: '已完成', className: 'bg-status-lime-background text-status-lime-text' },
-  failed: { label: '失败', className: 'bg-status-rose-background text-status-rose-text' },
-  waiting: { label: '待复核', className: 'bg-status-orange-background text-status-orange-text' },
-  skipped: { label: '已跳过', className: 'bg-background-tertiary-default text-text-tertiary' },
-  cancelled: { label: '已取消', className: 'bg-background-tertiary-default text-text-secondary' },
+/* ---------------------------------------------------------------------------
+ * Figures
+ * ------------------------------------------------------------------------ */
+
+export function Figure({
+  label,
+  value,
+  unit,
+  note,
+}: {
+  label: string
+  value: ReactNode
+  unit?: string
+  note?: string
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="t-label">{label}</div>
+      <div className="mt-2 flex items-baseline gap-1">
+        <span className="figure-value">{value}</span>
+        {unit && <span className="t-meta pb-1">{unit}</span>}
+      </div>
+      {note && <div className="mt-1.5 text-caption-2-regular text-text-tertiary">{note}</div>}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * Status
+ * ------------------------------------------------------------------------ */
+
+const STATUS_META: Record<string, { label: string; color: ChipColor }> = {
+  pending: { label: '待执行', color: 'neutral' },
+  queued: { label: '排队中', color: 'yellow' },
+  running: { label: '执行中', color: 'orange' },
+  completed: { label: '已完成', color: 'lime' },
+  failed: { label: '失败', color: 'rose' },
+  waiting: { label: '待复核', color: 'orange' },
+  skipped: { label: '已跳过', color: 'neutral' },
+  cancelled: { label: '已取消', color: 'neutral' },
+  closed: { label: '已归档', color: 'neutral' },
 }
 
 export function statusLabel(status: string) {
@@ -106,68 +149,67 @@ export function statusLabel(status: string) {
 }
 
 export function StatusPill({ status, className }: { status: NodeStatus | string; className?: string }) {
-  const meta = STATUS_META[status] ?? { label: status, className: 'bg-background-tertiary-default text-text-secondary' }
+  const meta = STATUS_META[status] ?? { label: status, color: 'neutral' as ChipColor }
   return (
-    <span
-      className={cx(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-caption-1-semibold',
-        meta.className,
-        className,
-      )}
-    >
-      <span className="size-1.5 rounded-full bg-current" aria-hidden />
+    <Chip variant="caption" color={meta.color} className={className}>
       {meta.label}
-    </span>
+    </Chip>
   )
 }
+
+/* ---------------------------------------------------------------------------
+ * Score
+ * ------------------------------------------------------------------------ */
 
 export function ScoreRing({
   score,
   size = 86,
   label = '核查分',
+  className,
 }: {
   score: number
   size?: number
   label?: string
+  className?: string
 }) {
   const safe = Math.max(0, Math.min(1, score || 0))
-  const radius = size / 2 - 7
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference * (1 - safe)
-  const toneClass = safe >= 0.85 ? 'text-status-lime-text' : safe >= 0.6 ? 'text-accent-500' : 'text-status-rose-text'
+  const percent = Math.round(safe * 100)
+  const large = size >= 60
+
+  if (!large) {
+    return (
+      <span
+        className={cx(
+          't-num text-[13px] font-medium',
+          safe >= 0.9 ? 'text-text-primary' : 'text-accent-600',
+          className,
+        )}
+      >
+        {percent}%
+      </span>
+    )
+  }
+
   return (
-    <div className={cx('relative shrink-0', toneClass)} style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="var(--color-border-button-default)"
-          strokeWidth="6"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <strong className={size >= 60 ? 'text-title-3-semibold' : 'text-caption-1-semibold'}>
-          {Math.round(safe * 100)}
-        </strong>
-        {label && <span className="text-caption-2-medium text-text-tertiary">{label}</span>}
+    <div className={cx('min-w-0', className)}>
+      <div className="flex items-baseline gap-1">
+        <span className="figure-value">{percent}</span>
+        <span className="t-meta pb-0.5">%</span>
       </div>
+      {label && <div className="t-label mt-2">{label}</div>}
+      <ProgressBar
+        aria-label={label || '核查分'}
+        value={percent}
+        size="sm"
+        className="mt-3 max-w-[168px]"
+      />
     </div>
   )
 }
+
+/* ---------------------------------------------------------------------------
+ * Empty and modal
+ * ------------------------------------------------------------------------ */
 
 export function Empty({
   title,
@@ -179,13 +221,10 @@ export function Empty({
   action?: ReactNode
 }) {
   return (
-    <div className="flex min-h-48 flex-col items-center justify-center rounded-3xl border border-dashed border-border-button-default bg-background-secondary-default p-8 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-background-tertiary-default text-foreground-icon-secondary">
-        <RiCheckboxCircleLine className="size-5" aria-hidden />
-      </div>
-      <strong className="mt-4 text-title-3-semibold text-text-primary">{title}</strong>
-      {description && <p className="mt-1 max-w-md text-body-regular text-text-secondary">{description}</p>}
-      {action && <div className="mt-5">{action}</div>}
+    <div className="flex min-h-40 flex-col items-start justify-center gap-2 rounded-3xl border border-dashed border-border-button-default p-8">
+      <strong className="t-h3">{title}</strong>
+      {description && <p className="t-small max-w-md">{description}</p>}
+      {action && <div className="mt-2">{action}</div>}
     </div>
   )
 }
@@ -214,7 +253,7 @@ export function Modal({
         if (!next) onClose()
       }}
       size={wide ? 'xl' : 'md'}
-      className="bg-background-primary-default"
+      className="panel-solid"
     >
       <ModalHeader title={title} description={subtitle} closeLabel="关闭" />
       <ModalBody>{children}</ModalBody>
@@ -223,11 +262,15 @@ export function Modal({
   )
 }
 
+/* ---------------------------------------------------------------------------
+ * Markdown
+ * ------------------------------------------------------------------------ */
+
 export function MarkdownView({ content, citations }: { content: string; citations?: Citation[] }) {
   const citationMap = new Map((citations ?? []).map((citation) => [citation.id, citation]))
   const linked = content.replace(/\[([A-Z]\d+)\]/g, '[$1](#cite-$1)')
   return (
-    <div className="report-prose report-serif">
+    <div className="report-prose">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -241,16 +284,16 @@ export function MarkdownView({ content, citations }: { content: string; citation
               const id = href.replace('#cite-', '')
               const citation = citationMap.get(id)
               return (
-                <span
-                  className="mx-0.5 inline-flex rounded-sm bg-accent-100 px-1 text-caption-1-semibold text-accent-700"
+                <sup
+                  className="mx-0.5 font-mono text-[0.6875rem] font-medium text-accent-600 no-underline"
                   title={citation ? `${citation.docTitle}\n${citation.quote}` : id}
                 >
                   [{id}]
-                </span>
+                </sup>
               )
             }
             return (
-              <a href={href} target="_blank" rel="noreferrer" className="text-accent-700 underline underline-offset-2">
+              <a href={href} target="_blank" rel="noreferrer">
                 {children}
               </a>
             )
@@ -262,5 +305,3 @@ export function MarkdownView({ content, citations }: { content: string; citation
     </div>
   )
 }
-
-

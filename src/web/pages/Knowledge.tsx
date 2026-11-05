@@ -1,26 +1,23 @@
 import { useMemo, useState } from 'react'
 import {
   RiAddLine,
-  RiArrowRightLine,
-  RiBookOpenLine,
   RiDeleteBin6Line,
   RiFileTextLine,
-  RiPriceTag3Line,
   RiSearchLine,
-  RiSparklingLine,
-  RiStackLine,
   RiUpload2Line,
 } from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
-import { Badge } from '@/components/base/badges/badge'
 import { Button } from '@/components/base/buttons/button'
 import { IconButton } from '@/components/base/buttons/icon-button'
+import { Chip } from '@/components/base/badges/chip'
 import { Input } from '@/components/base/input/input'
+import { SearchField } from '@/components/base/search-field/search-field'
+import { Tab, TabList, TabPanel, Tabs } from '@/components/base/tabs/tabs'
 import { Textarea } from '@/components/base/textarea/textarea'
 import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip'
 import { cx } from '@/utils/cx'
-import { Empty, Modal, PageHeader, Surface } from '../components/ui'
+import { Empty, MarkdownView, Modal, PageHeader, Surface } from '../components/ui'
 import type { KnowledgeDoc, SearchHit } from '../../shared/types'
 
 function formatDate(value: string) {
@@ -41,7 +38,8 @@ export default function Knowledge() {
   const [query, setQuery] = useState('AI 眼镜 出货量 渗透率')
   const [hits, setHits] = useState<SearchHit[]>([])
   const [searching, setSearching] = useState(false)
-  const [selected, setSelected] = useState<KnowledgeDoc | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [view, setView] = useState<'doc' | 'search'>('doc')
   const [pendingDelete, setPendingDelete] = useState<KnowledgeDoc | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -49,6 +47,7 @@ export default function Knowledge() {
     () => data?.documents.reduce((sum, doc) => sum + doc.chunkCount, 0) ?? 0,
     [data],
   )
+  const selected = data?.documents.find((doc) => doc.id === selectedId) ?? data?.documents[0]
 
   if (!data) return null
 
@@ -97,6 +96,7 @@ export default function Knowledge() {
     try {
       const result = await api.search(query)
       setHits(result.hits)
+      setView('search')
     } finally {
       setSearching(false)
     }
@@ -108,7 +108,7 @@ export default function Knowledge() {
     try {
       await api.deleteDocument(pendingDelete.id)
       await refresh()
-      if (selected?.id === pendingDelete.id) setSelected(null)
+      if (selectedId === pendingDelete.id) setSelectedId(null)
       setPendingDelete(null)
     } finally {
       setDeleting(false)
@@ -118,9 +118,8 @@ export default function Knowledge() {
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="Knowledge"
         title="知识库"
-        description="团队的事实底座。每个结论都能回到原文，核查员据此判断引用是否成立。"
+        meta={`${data.documents.length} 篇资料 · ${totalChunks} 个片段 · 中文 BM25 检索 · 引用可回查`}
         actions={
           <Button leadingIcon={RiAddLine} onClick={() => setOpen(true)}>
             添加资料
@@ -128,117 +127,159 @@ export default function Knowledge() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { icon: RiBookOpenLine, value: data.documents.length, label: '篇资料' },
-          { icon: RiStackLine, value: totalChunks, label: '个知识片段' },
-          { icon: RiSparklingLine, value: 'BM25', label: '中文检索 + 双字回退' },
-        ].map((item) => {
-          const Icon = item.icon
-          return (
-            <Surface key={item.label} className="flex items-center gap-3 p-4 sm:p-5">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-background-tertiary-default text-accent-600">
-                <Icon className="size-4" aria-hidden />
-              </span>
-              <div>
-                <div className="text-title-3-semibold text-text-primary">{item.value}</div>
-                <div className="mt-0.5 text-caption-1-regular text-text-tertiary">{item.label}</div>
-              </div>
-            </Surface>
-          )
-        })}
-        <Surface className="col-span-2 flex items-center gap-2.5 p-4 text-body-2-regular text-text-secondary sm:p-5 lg:col-span-1">
-          <RiSparklingLine className="size-4 shrink-0 text-accent-600" aria-hidden />
-          演示知识库为模拟资料，仅用于展示检索与引用流程。
+      <div className="grid gap-4 xl:grid-cols-[336px_minmax(0,1fr)]">
+        {/* Catalogue ----------------------------------------------------------- */}
+        <Surface className="panel flex flex-col self-start p-2.5">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1">
+            <span className="t-label">资料目录</span>
+            <Chip variant="caption" color="neutral">{data.documents.length}</Chip>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            {data.documents.length === 0 ? (
+              <p className="t-small px-2 py-4">知识库还是空的。</p>
+            ) : (
+              data.documents.map((doc) => {
+                const active = selected?.id === doc.id
+                return (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(doc.id)
+                      setView('doc')
+                    }}
+                    className={cx(
+                      'group w-full rounded-[12px] px-2.5 py-2 text-left transition-colors duration-150',
+                      'outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring',
+                      active ? 'bg-background-primary-active shadow-xs' : 'hover:bg-background-tertiary-default',
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      <RiFileTextLine className={cx('size-3.5 shrink-0', active ? 'text-accent-500' : 'text-text-placeholder')} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-text-primary">{doc.title}</span>
+                    </span>
+                    <span className="mt-1 flex items-center gap-1.5 ps-5 text-[10.5px] text-text-tertiary">
+                      <span className="tabular-nums">{doc.chunkCount} 片段</span>
+                      <span aria-hidden>·</span>
+                      <span className="tabular-nums">{formatDate(doc.createdAt)}</span>
+                      <span className="ms-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        {doc.tags.slice(0, 1).map((tag) => (
+                          <Chip key={tag} variant="caption" color="soft">{tag}</Chip>
+                        ))}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+          <p className="t-meta mt-3 border-t border-border-button-default px-2 pt-3">
+            演示知识库为模拟资料，仅用于展示检索与引用流程。
+          </p>
         </Surface>
-      </section>
 
-      <Surface className="mt-4 p-5 sm:p-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Retrieval lab</div>
-            <h2 className="mt-1.5 text-title-2-semibold text-text-primary">检索测试</h2>
-          </div>
-          <span className="text-caption-1-regular text-text-tertiary">输入一个问题，看看核查员会拿到哪些证据。</span>
-        </div>
-        <form
-          className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void runSearch()
-          }}
-        >
-          <Input
-            label="检索问题"
-            leadingIcon={RiSearchLine}
-            value={query}
-            onChange={setQuery}
-            placeholder="例如：2028 年 AI 眼镜出货量是多少？"
-            className="flex-1"
-          />
-          <Button type="submit" variant="secondary" disabled={searching || !query.trim()}>
-            {searching ? '检索中…' : '检索'}
-          </Button>
-        </form>
-        {hits.length > 0 && (
-          <div className="mt-5 grid gap-2.5">
-            {hits.map((hit) => (
-              <div key={hit.chunkId} className="rounded-2xl border border-separator-border bg-background-secondary-default p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-body-2-medium text-text-primary">{hit.docTitle}</span>
-                  <Badge color="neutral">score {hit.score.toFixed(2)}</Badge>
+        {/* Reader -------------------------------------------------------------- */}
+        <Surface className="panel overflow-hidden p-0">
+          <Tabs
+            selectedKey={view}
+            onSelectionChange={(key) => setView(key as 'doc' | 'search')}
+            className="gap-0"
+          >
+            <div className="flex flex-nowrap items-end justify-between gap-2 border-b border-border-button-default px-4 pt-2">
+              <div className="min-w-0 flex-1">
+                <TabList aria-label="知识库视图" variant="underline">
+                  <Tab id="doc" icon={RiFileTextLine}>资料内容</Tab>
+                  <Tab id="search" icon={RiSearchLine}>检索测试</Tab>
+                </TabList>
+              </div>
+              {selected && view === 'doc' && (
+                <div className="shrink-0 pb-2">
+                  <TooltipTrigger>
+                    <IconButton
+                      icon={RiDeleteBin6Line}
+                      size="small"
+                      aria-label={`删除 ${selected.title}`}
+                      onClick={() => setPendingDelete(selected)}
+                      className="text-text-tertiary"
+                    />
+                    <Tooltip>删除资料</Tooltip>
+                  </TooltipTrigger>
                 </div>
-                <p className="mt-2 text-body-2-regular leading-relaxed text-text-secondary">{hit.text.slice(0, 220)}…</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Surface>
+              )}
+            </div>
 
-      <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {data.documents.length === 0 ? (
-          <div className="sm:col-span-2 xl:col-span-3">
-            <Empty title="知识库还是空的" description="添加第一份资料，Agent 才能开始带引用地研究。" />
-          </div>
-        ) : (
-          data.documents.map((doc) => (
-            <Surface key={doc.id} className="group flex min-h-56 flex-col p-5">
-              <div className="flex items-start justify-between gap-3">
-                <span className="grid size-9 place-items-center rounded-xl bg-background-tertiary-default text-accent-600">
-                  <RiFileTextLine className="size-4" aria-hidden />
-                </span>
-                <TooltipTrigger>
-                  <IconButton
-                    icon={RiDeleteBin6Line}
-                    size="small"
-                    aria-label={`删除 ${doc.title}`}
-                    onClick={() => setPendingDelete(doc)}
-                    className="text-text-tertiary"
+            <TabPanel id="doc">
+              {selected ? (
+                <article className="mx-auto max-w-[70ch] px-6 py-7 sm:px-10">
+                  <h2 className="text-[22px] font-semibold leading-snug tracking-[-0.02em] text-text-primary">
+                    {selected.title}
+                  </h2>
+                  <div className="mt-2 flex flex-wrap items-center gap-2.5">
+                    <span className="t-meta">{selected.source}</span>
+                    <span className="t-meta">·</span>
+                    <span className="t-meta">{selected.chunkCount} 个片段</span>
+                    <span className="t-meta">·</span>
+                    <span className="t-meta">{formatDate(selected.createdAt)}</span>
+                    {selected.tags.map((tag) => (
+                      <Chip key={tag} variant="caption" color="neutral">{tag}</Chip>
+                    ))}
+                  </div>
+                  <div className="mt-6 border-t border-border-button-default pt-6">
+                    <MarkdownView content={selected.content.replace(/^#\s+.*\n/, '')} />
+                  </div>
+                </article>
+              ) : (
+                <div className="p-6">
+                  <Empty title="还没有选中资料" description="从左侧目录选择一份资料，正文会在这里打开。" />
+                </div>
+              )}
+            </TabPanel>
+
+            <TabPanel id="search">
+              <div className="px-6 py-6 sm:px-8">
+                <form
+                  className="flex items-end gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void runSearch()
+                  }}
+                >
+                  <SearchField
+                    aria-label="检索问题"
+                    shape="pill"
+                    placeholder="例如：2028 年 AI 眼镜出货量是多少？"
+                    value={query}
+                    onChange={setQuery}
+                    isLoading={searching}
+                    className="min-w-0 flex-1"
                   />
-                  <Tooltip>删除资料</Tooltip>
-                </TooltipTrigger>
-              </div>
-              <h3 className="mt-4 text-title-3-semibold leading-snug text-text-primary">{doc.title}</h3>
-              <p className="mt-1 text-caption-1-regular text-text-tertiary">{doc.source}</p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {doc.tags.map((tag) => (
-                  <span key={tag} className="inline-flex items-center gap-1 rounded-md border border-separator-border px-1.5 py-0.5 text-caption-2-regular text-text-secondary">
-                    <RiPriceTag3Line className="size-3" aria-hidden /> {tag}
-                  </span>
-                ))}
-              </div>
-              <div className="mt-auto flex items-center gap-3 border-t border-separator-border pt-3 text-caption-1-regular text-text-tertiary">
-                <span>{doc.chunkCount} 个片段</span>
-                <span>{formatDate(doc.createdAt)}</span>
-                <Button variant="ghost" size="xs" trailingIcon={RiArrowRightLine} className="ms-auto" onClick={() => setSelected(doc)}>
-                  查看
-                </Button>
-              </div>
-            </Surface>
-          ))
-        )}
-      </section>
+                  <Button type="submit" variant="secondary" disabled={searching || !query.trim()}>
+                    检索
+                  </Button>
+                </form>
 
+                <div className="mt-5 flex flex-col gap-1">
+                  {hits.length === 0 ? (
+                    <p className="t-meta">输入一个问题，看看核查员会拿到哪些证据。</p>
+                  ) : (
+                    hits.map((hit) => (
+                      <div key={hit.chunkId} className="rounded-[14px] px-3 py-3 transition-colors duration-150 hover:bg-background-secondary-default">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[12px] font-medium text-text-primary">{hit.docTitle}</span>
+                          <Chip variant="caption" color="neutral">{hit.score.toFixed(2)}</Chip>
+                        </div>
+                        <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-text-secondary">{hit.text}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </TabPanel>
+          </Tabs>
+        </Surface>
+      </div>
+
+      {/* Add document --------------------------------------------------------- */}
       <Modal
         open={open}
         onClose={reset}
@@ -267,14 +308,14 @@ export default function Knowledge() {
             <Input label="标签" value={tags} onChange={setTags} placeholder="市场, 出货量" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="text-caption-1-semibold text-text-secondary">上传文件</span>
+            <span className="text-[12px] font-medium text-text-secondary">上传文件</span>
             <label
               className={cx(
-                'relative flex cursor-pointer items-center gap-2.5 rounded-2lg border border-dashed border-border-button-default bg-background-tertiary-default px-3 py-3',
-                'text-body-2-regular text-text-secondary transition-colors duration-150 hover:bg-background-secondary-hover',
+                'flex cursor-pointer items-center gap-2.5 rounded-[14px] bg-background-tertiary-default px-3 py-3',
+                'text-[13px] text-text-secondary transition-colors duration-150 hover:bg-background-secondary-hover',
               )}
             >
-              <RiUpload2Line className="size-5 text-accent-600" aria-hidden />
+              <RiUpload2Line className="size-5 text-accent-500" aria-hidden />
               <span className="min-w-0 truncate">{file ? file.name : '选择 .md / .txt 文件'}</span>
               <input
                 type="file"
@@ -293,24 +334,11 @@ export default function Knowledge() {
               placeholder="粘贴 Markdown 或纯文本，系统会按段落切分并建立索引。"
             />
           )}
-          {error && <p className="text-caption-1-medium text-status-rose-text">{error}</p>}
+          {error && <p className="text-[12px] text-status-rose-text">{error}</p>}
         </form>
       </Modal>
 
-      <Modal
-        open={Boolean(selected)}
-        onClose={() => setSelected(null)}
-        title={selected?.title ?? ''}
-        subtitle={selected?.source}
-        wide
-      >
-        <div className="flex flex-col gap-3">
-          {selected?.content.split(/\n{2,}/).map((paragraph, index) => (
-            <p key={index} className="text-body-regular leading-8 text-text-secondary">{paragraph}</p>
-          ))}
-        </div>
-      </Modal>
-
+      {/* Delete --------------------------------------------------------------- */}
       <Modal
         open={Boolean(pendingDelete)}
         onClose={() => setPendingDelete(null)}
@@ -325,7 +353,7 @@ export default function Knowledge() {
           </>
         }
       >
-        <p className="text-body-regular leading-relaxed text-text-secondary">
+        <p className="t-small">
           删除后，引用这份资料的报告仍会保留历史快照，但后续运行无法再检索到它。
         </p>
       </Modal>

@@ -1,45 +1,154 @@
 /*
- * AgentLoom theme for BoardUI.
+ * AgentLoom — Apple-flavoured glass system on top of BoardUI
  *
- * One semantic token layer: BoardUI's tokens are re-pointed to the product
- * palette here. Components never carry raw colors.
+ * Neutral translucent materials over a soft ambient ground, one warm accent,
+ * 10–22px radii, layered soft shadows and a single hairline everywhere.
+ * Nothing is opaque unless it has to be: modal panels and the report surface.
  */
 
 @theme {
-  /* Controls are 12px; cards use Tailwind's 24px 3xl radius. */
-  --radius-2lg: 12px;
-  --radius-3xl: 24px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 22px;
+  --radius-4xl: 26px;
+  --radius-2lg: 10px;
 
-  /* App-only semantic surfaces. BoardUI covers the rest. */
-  --color-surface-sidebar: #161617;
-  --color-surface-sidebar-hover: rgb(255 255 255 / 0.07);
-  --color-surface-sidebar-active: rgb(255 255 255 / 0.1);
-  --color-separator-sidebar: rgb(255 255 255 / 0.08);
-  --color-text-on-sidebar: #f5f5f7;
-  --color-text-on-sidebar-muted: #9a9a9f;
-  --color-text-on-sidebar-faint: #6e6e73;
-  --color-surface-overlay: rgb(0 0 0 / 0.38);
-
-  --shadow-switch-on-sm: inset 0 1px 0 0 rgb(255 255 255 / 0.25), inset 0 0 0 0.5px var(--color-accent-500);
-  --shadow-switch-on-md: inset 0 1.5px 0 0 rgb(255 255 255 / 0.25), inset 0 0 0 0.75px var(--color-accent-500);
-  --shadow-switch-chip-sm: 0 2px 2px 0 rgb(0 0 0 / 0.03);
-  --shadow-switch-chip-md: 0 3px 3px 0 rgb(0 0 0 / 0.03);
-  --shadow-switch-chip-lg: 0 4px 4px 0 rgb(0 0 0 / 0.03);
-  --shadow-switch-thumb: 0 3px 3px 0 rgb(0 0 0 / 0.03), 0 0.75px 0 0 rgb(0 0 0 / 0.05);
+  /* New surface tokens (utilities are generated from @theme only). */
+  --color-surface-glass: rgb(255 255 255 / 0.62);
+  --color-surface-glass-strong: rgb(255 255 255 / 0.82);
+  --color-surface-glass-thin: rgb(255 255 255 / 0.42);
+  --color-surface-solid: #ffffff;
 }
 
 :root {
   color-scheme: light;
-  --radius-2lg: 12px;
 
-  /* System SF / PingFang stack; no Google Fonts or next/font. */
-  --font-inter: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
-  --font-mono-source: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  /* SF-like: Inter for Latin, Noto Sans SC for Chinese, both installed
+     locally so the demo renders offline. */
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  --font-inter: var(--font-sans);
+  --font-serif: var(--font-sans);
+  --font-mono: "Source Code Pro", "SFMono-Regular", ui-monospace, Consolas, monospace;
 
-  /* Shared optical effects stay in the same theme as visible surfaces. */
+  /* Apple neutrals, warmed a touch so copper sits naturally. */
+  --color-paper: #e8e8ed;
+  --color-paper-raised: rgb(255 255 255 / 0.72);
+  --color-paper-solid: #ffffff;
+  --color-ink: #1d1d1f;
+  --color-ink-2: #6e6e73;
+  --color-ink-3: #86868b;
+  --color-ink-4: #aeaeb2;
+  --color-hairline: rgb(0 0 0 / 0.09);
+  --color-hairline-soft: rgb(0 0 0 / 0.055);
+
+  /* One accent: burnt copper / bronze. */
+  --color-accent-50: #faf1eb;
+  --color-accent-100: #f2e1d5;
+  --color-accent-200: #e4c4ae;
+  --color-accent-300: #d0a88f;
+  --color-accent-400: #b87a52;
+  --color-accent-500: #9e5b38;
+  --color-accent-600: #87492b;
+  --color-accent-700: #6f3a21;
+  --color-accent-800: #562c19;
+  --color-accent-900: #3d1e11;
+  --color-accent-950: #26130a;
+
+  --color-background-full: var(--color-paper);
+  --color-background-primary-default: rgb(255 255 255 / 0.72);
+  --color-background-primary-hover: rgb(255 255 255 / 0.9);
+  --color-background-primary-active: rgb(255 255 255 / 0.98);
+  --color-background-primary-disabled: rgb(255 255 255 / 0.4);
+  --color-background-secondary-default: rgb(255 255 255 / 0.5);
+  --color-background-secondary-hover: rgb(255 255 255 / 0.72);
+  --color-background-tertiary-default: rgb(0 0 0 / 0.05);
+  --color-background-tertiary-hover: rgb(0 0 0 / 0.08);
+  --color-background-inner-default: rgb(255 255 255 / 0.6);
+
+  --color-text-primary: var(--color-ink);
+  --color-text-secondary: var(--color-ink-2);
+  --color-text-tertiary: var(--color-ink-3);
+  --color-text-placeholder: var(--color-ink-4);
+  --color-text-white: #ffffff;
+
+  --color-separator-border: var(--color-hairline-soft);
+  --color-border-button-default: var(--color-hairline);
+  --color-border-button-hover: rgb(0 0 0 / 0.18);
+  --color-border-button-active: rgb(0 0 0 / 0.28);
+  --color-border-focus-ring: var(--color-accent-500);
+  --color-border-table: var(--color-hairline-soft);
+
+  --color-foreground-icon-primary: var(--color-ink);
+  --color-foreground-icon-secondary: var(--color-ink-2);
+  --color-foreground-icon-tertiary: var(--color-ink-3);
+  --color-foreground-icon-quaternary: var(--color-ink-4);
+
+  /* Status: soft tinted chips, Apple system colours at 12% fill. */
+  --color-status-lime-background: #e4efe6;
+  --color-status-lime-text: #2f6a44;
+  --color-status-yellow-background: #f7efdc;
+  --color-status-yellow-text: #7f5e15;
+  --color-status-orange-background: #f9e9dc;
+  --color-status-orange-text: #8c4c20;
+  --color-status-rose-background: #f8e3e1;
+  --color-status-rose-text: #9a322d;
+  --color-status-blue-background: #e7edf4;
+  --color-status-blue-text: #35526f;
+  --color-status-cyan-background: #e3eff0;
+  --color-status-cyan-text: #2c5f63;
+  --color-status-purple-background: #eee9f5;
+  --color-status-purple-text: #55407a;
+
+  --color-chart-1: #9e5b38;
+  --color-chart-1-active: #87492b;
+  --color-chart-2: #6e6e73;
+  --color-chart-2-active: #4a4a4d;
+  --color-chart-3: #a1a1a6;
+  --color-chart-3-active: #6e6e73;
+  --color-chart-4: #b87a52;
+  --color-chart-4-active: #9e5b38;
+  --color-chart-5: #c7c7cc;
+  --color-chart-5-active: #86868b;
+  --color-chart-track: rgb(0 0 0 / 0.07);
+  --color-chart-neutral: rgb(0 0 0 / 0.16);
+
+  /* Controls: flat fills, never gradients. */
+  --gradient-button-primary-default: linear-gradient(#9e5b38, #9e5b38);
+  --gradient-button-primary-hover: linear-gradient(#87492b, #87492b);
+  --gradient-button-primary-active: linear-gradient(#6f3a21, #6f3a21);
+  --gradient-button-primary-disabled: linear-gradient(rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.08));
+  --gradient-button-danger-default: linear-gradient(#9a322d, #9a322d);
+  --gradient-button-danger-hover: linear-gradient(#ad3a33, #ad3a33);
+  --gradient-button-danger-active: linear-gradient(#7f2823, #7f2823);
+  --gradient-button-danger-disabled: linear-gradient(#f0d7d4, #f0d7d4);
+  --color-button-primary-disabled-foreground: var(--color-ink-4);
+
+  --color-button-ghost-background: transparent;
+  --color-button-ghost-hover: rgb(0 0 0 / 0.045);
+  --color-button-ghost-active: rgb(0 0 0 / 0.08);
+  --color-button-ghost-foreground: var(--color-ink);
+  --color-button-ghost-disabled: transparent;
+  --color-button-ghost-disabled-foreground: var(--color-ink-4);
+
+  --color-segmented-control-background: rgb(0 0 0 / 0.05);
+  --color-segmented-control-selected-background: #ffffff;
+  --color-pill-tab-blue-selected-background: #ffffff;
+  --color-pill-tab-blue-hover-background: rgb(255 255 255 / 0.6);
+  --color-tab-count-selected-background: var(--color-accent-100);
+
+  /* Elevation: soft, layered, neutral. */
+  --shadow-xs: 0 1px 1px rgb(16 17 20 / 0.05);
+  --shadow-card: 0 1px 2px rgb(16 17 20 / 0.04), 0 10px 28px -14px rgb(16 17 20 / 0.16);
+  --shadow-dropdown: 0 1px 2px rgb(16 17 20 / 0.06), 0 24px 60px -18px rgb(16 17 20 / 0.24);
+  --shadow-sidebar: 0 1px 2px rgb(16 17 20 / 0.04), 0 24px 60px -24px rgb(16 17 20 / 0.2);
+  --shadow-nav-selected: 0 1px 2px rgb(16 17 20 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.22);
+
   --color-mask-opaque: #000;
-  --color-tooltip-caret-shadow: rgb(0 0 0 / 0.05);
+  --color-tooltip-caret-shadow: rgb(0 0 0 / 0.08);
   --color-glass-rim-highlight: rgb(255 255 255 / 0.9);
   --color-glass-rim-shade: rgb(0 0 0 / 0.14);
   --color-glass-rim-dim: rgb(255 255 255 / 0.1);
@@ -50,92 +159,387 @@
   --color-skeleton-line-dark: rgb(255 255 255 / 0.2);
   --color-skeleton-glow-dark: rgb(255 255 255 / 0.08);
   --color-skeleton-bloom-dark: rgb(255 255 255 / 0.04);
-
-  /* Copper accent ramp — single accent, all interactive states derive here. */
-  --color-accent-50: color-mix(in srgb, #b56245 5%, white);
-  --color-accent-100: color-mix(in srgb, #b56245 10%, white);
-  --color-accent-200: color-mix(in srgb, #b56245 20%, white);
-  --color-accent-300: color-mix(in srgb, #b56245 34%, white);
-  --color-accent-400: color-mix(in srgb, #b56245 58%, white);
-  --color-accent-500: #b56245;
-  --color-accent-600: #96492f;
-  --color-accent-700: color-mix(in srgb, #b56245 74%, #1d1d1f);
-  --color-accent-800: color-mix(in srgb, #b56245 58%, #1d1d1f);
-  --color-accent-900: color-mix(in srgb, #b56245 40%, #1d1d1f);
-  --color-accent-950: color-mix(in srgb, #b56245 24%, #1d1d1f);
-
-  /* Titanium page, glass cards, graphite ink. */
-  --color-background-full: #f5f5f7;
-  --color-background-primary-default: rgb(255 255 255 / 0.78);
-  --color-background-primary-hover: rgb(255 255 255 / 0.94);
-  --color-background-primary-active: rgb(255 255 255 / 0.99);
-  --color-background-primary-disabled: rgb(255 255 255 / 0.42);
-  --color-background-secondary-default: rgb(255 255 255 / 0.5);
-  --color-background-secondary-hover: rgb(255 255 255 / 0.68);
-  --color-background-tertiary-default: rgb(0 0 0 / 0.045);
-  --color-background-tertiary-hover: rgb(0 0 0 / 0.07);
-  --color-background-inner-default: rgb(255 255 255 / 0.7);
-
-  --color-text-primary: #1d1d1f;
-  --color-text-secondary: #6e6e73;
-  --color-text-tertiary: #8e8e93;
-  --color-text-placeholder: #8e8e93;
-
-  --color-separator-border: rgb(0 0 0 / 0.08);
-  --color-border-button-default: rgb(0 0 0 / 0.09);
-  --color-border-button-hover: rgb(0 0 0 / 0.16);
-  --color-border-button-active: rgb(0 0 0 / 0.22);
-  --color-border-focus-ring: #b56245;
-  --color-border-table: rgb(0 0 0 / 0.08);
-
-  --color-foreground-icon-primary: #1d1d1f;
-  --color-foreground-icon-secondary: #6e6e73;
-  --color-foreground-icon-tertiary: #8e8e93;
-  --color-foreground-icon-quaternary: #c7c7cc;
-
-  /* Neutral ghost action, not a second accent surface. */
-  --color-button-ghost-background: transparent;
-  --color-button-ghost-hover: rgb(0 0 0 / 0.04);
-  --color-button-ghost-active: rgb(0 0 0 / 0.07);
-  --color-button-ghost-foreground: #1d1d1f;
-  --color-button-ghost-disabled: transparent;
-  --color-button-ghost-disabled-foreground: #8e8e93;
-
-  --color-pill-tab-blue-selected-background: rgb(255 255 255 / 0.9);
-  --color-pill-tab-blue-hover-background: rgb(255 255 255 / 0.45);
-  --color-segmented-control-background: rgb(0 0 0 / 0.045);
-  --color-segmented-control-selected-background: rgb(255 255 255 / 0.96);
-  --color-tab-count-selected-background: var(--color-accent-100);
-
-  --shadow-card:
-    0 1px 2px rgb(0 0 0 / 0.04),
-    0 18px 52px rgb(0 0 0 / 0.06),
-    inset 0 1px 0 rgb(255 255 255 / 0.72);
-  --shadow-dropdown:
-    0 2px 6px rgb(0 0 0 / 0.06),
-    0 18px 48px rgb(0 0 0 / 0.12);
-  --shadow-sidebar:
-    0 0 0 1px rgb(255 255 255 / 0.04),
-    0 18px 48px rgb(0 0 0 / 0.16);
 }
 
-/* App page entrance: 4px rise + 2px blur, removed after the animation so it
- * never creates a containing block for fixed overlays. */
+/* -------------------------------------------------------------------------
+ * Ground
+ *
+ * Two very soft ambient lights so the glass has something to refract. Fixed,
+ * static, never animated.
+ * ---------------------------------------------------------------------- */
+
+.app-ground {
+  background-color: var(--color-paper);
+  background-image:
+    radial-gradient(860px 620px at 4% -8%, rgb(158 91 56 / 0.16), transparent 60%),
+    radial-gradient(1080px 720px at 94% 0%, rgb(72 96 140 / 0.12), transparent 62%),
+    radial-gradient(760px 520px at 48% 106%, rgb(120 110 95 / 0.1), transparent 64%);
+  background-attachment: fixed;
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- glass */
+
+  .glass {
+    background-color: rgb(255 255 255 / 0.62);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgb(255 255 255 / 0.72);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+      0 1px 2px rgb(16 17 20 / 0.04),
+      0 12px 32px -16px rgb(16 17 20 / 0.16);
+  }
+
+  .glass-strong {
+    background-color: rgb(255 255 255 / 0.82);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgb(255 255 255 / 0.85);
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.95),
+      0 1px 2px rgb(16 17 20 / 0.04),
+      0 18px 48px -24px rgb(16 17 20 / 0.22);
+  }
+
+  .glass-thin {
+    background-color: rgb(255 255 255 / 0.42);
+    -webkit-backdrop-filter: blur(18px) saturate(170%);
+    backdrop-filter: blur(18px) saturate(170%);
+    border: 1px solid rgb(255 255 255 / 0.55);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.7);
+  }
+
+  .panel {
+    border-radius: var(--radius-3xl);
+    padding: 1.5rem;
+  }
+
+  .panel-solid {
+    background-color: #ffffff;
+    border: 1px solid rgb(0 0 0 / 0.06);
+    box-shadow: var(--shadow-dropdown);
+    border-radius: var(--radius-3xl);
+  }
+
+  .lift {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, background-color 220ms ease;
+  }
+
+  .lift:hover {
+    transform: translateY(-1px);
+  }
+
+  /* ------------------------------------------------------------ typography */
+
+  .t-display {
+    font-family: var(--font-sans);
+    font-size: clamp(2.25rem, 1.6rem + 2.4vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: -0.026em;
+    font-weight: 600;
+    text-wrap: balance;
+    color: var(--color-ink);
+  }
+
+  .t-h1 {
+    font-family: var(--font-sans);
+    font-size: clamp(1.75rem, 1.4rem + 1.2vw, 2.125rem);
+    line-height: 1.16;
+    letter-spacing: -0.022em;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .t-h2 {
+    font-family: var(--font-sans);
+    font-size: 1.375rem;
+    line-height: 1.3;
+    letter-spacing: -0.014em;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .t-h3 {
+    font-family: var(--font-sans);
+    font-size: 1.0625rem;
+    line-height: 1.4;
+    letter-spacing: -0.008em;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .t-body {
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    letter-spacing: -0.005em;
+    color: var(--color-ink-2);
+  }
+
+  .t-small {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: var(--color-ink-2);
+  }
+
+  .t-label {
+    font-family: var(--font-sans);
+    font-size: 0.6875rem;
+    line-height: 1.2;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--color-ink-3);
+  }
+
+  .t-meta {
+    font-size: 0.75rem;
+    line-height: 1.45;
+    letter-spacing: -0.002em;
+    color: var(--color-ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .t-code {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.01em;
+    color: var(--color-ink-3);
+  }
+
+  .t-num {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .figure-value {
+    font-family: var(--font-sans);
+    font-size: clamp(1.875rem, 1.5rem + 1vw, 2.5rem);
+    line-height: 1;
+    letter-spacing: -0.035em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-ink);
+  }
+
+  /* ------------------------------------------------------------- structure */
+
+  .index {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.6875rem;
+    color: var(--color-ink-4);
+  }
+
+  .mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--color-ink-2);
+    white-space: nowrap;
+  }
+
+  .mark::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 999px;
+    background-color: currentColor;
+  }
+
+  .mark-ok { color: #2f6a44; }
+  .mark-run { color: var(--color-accent-600); }
+  .mark-warn { color: #8c4c20; }
+  .mark-fail { color: #9a322d; }
+  .mark-idle { color: var(--color-ink-3); }
+
+  .link {
+    color: var(--color-ink);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  .link:hover {
+    color: var(--color-accent-600);
+  }
+
+  /* List row used everywhere instead of a card per item. */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: var(--radius-xl);
+    padding: 0.5rem 0.75rem;
+    transition: background-color 150ms ease;
+  }
+
+  .row:hover {
+    background-color: rgb(255 255 255 / 0.55);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Document surface
+ * ---------------------------------------------------------------------- */
+
+.report-serif {
+  font-family: var(--font-sans);
+}
+
+.brand-wordmark {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.report-prose {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.85;
+  letter-spacing: -0.003em;
+  color: var(--color-ink);
+}
+
+.report-prose h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  margin: 0 0 1.5rem;
+}
+
+.report-prose h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  margin: 2.5rem 0 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.report-prose h3 {
+  font-size: 0.975rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.report-prose p {
+  margin: 0 0 1.05rem;
+}
+
+.report-prose ul,
+.report-prose ol {
+  margin: 0 0 1.2rem;
+  padding-inline-start: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.report-prose ul { list-style: disc; }
+.report-prose ol { list-style: decimal; }
+
+.report-prose blockquote {
+  margin: 1.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-xl);
+  border-inline-start: 2px solid var(--color-accent-500);
+  background-color: rgb(158 91 56 / 0.06);
+  color: var(--color-ink-2);
+  font-size: 0.9375rem;
+}
+
+.report-prose blockquote p { margin: 0; }
+
+.report-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background-color: var(--color-background-tertiary-default);
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+}
+
+.report-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.8125rem;
+}
+
+.report-prose th,
+.report-prose td {
+  border-bottom: 1px solid var(--color-hairline);
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  text-align: start;
+}
+
+.report-prose th {
+  font-weight: 500;
+  color: var(--color-ink-3);
+  font-size: 0.75rem;
+}
+
+.report-prose strong {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.report-prose pre {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background-color: #1d1d1f;
+  color: #f5f5f7;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  overflow-x: auto;
+  border-radius: var(--radius-xl);
+}
+
+.report-prose pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.report-prose a {
+  color: var(--color-accent-600);
+  text-decoration: none;
+}
+
+/* -------------------------------------------------------------------------
+ * Motion
+ * ---------------------------------------------------------------------- */
+
 @keyframes app-page-enter {
   from {
     opacity: 0;
-    transform: translateY(4px);
-    filter: blur(2px);
+    transform: translateY(8px) scale(0.995);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 .app-page {
-  animation: app-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: app-page-enter 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.feed-row {
+  animation: feed-in 240ms ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -148,83 +552,95 @@
   }
 }
 
-/* Report prose is the one place serif is allowed, plus the wordmark. */
-.report-serif {
-  font-family: "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC",
-    "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
-}
-
-.brand-wordmark {
-  font-family: "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC",
-    "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
-}
-
 body {
   min-height: 100dvh;
-  background-color: var(--color-background-full);
+  background-color: var(--color-paper);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Markdown generated by react-markdown; the only document-reading surface. */
-.report-prose {
-  @apply text-body-regular text-text-primary;
-  line-height: 1.9;
-}
-.report-prose h1 {
-  @apply mb-4 text-title-1-medium text-text-primary;
-}
-.report-prose h2 {
-  @apply mt-8 mb-3 border-t border-separator-border pt-6 text-title-2-medium text-text-primary;
-}
-.report-prose h3 {
-  @apply mt-6 mb-2 text-title-3-semibold text-text-primary;
-}
-.report-prose p {
-  @apply mb-3;
-}
-.report-prose ul,
-.report-prose ol {
-  @apply mb-4 flex flex-col gap-1.5 ps-5;
-}
-.report-prose ul {
-  list-style: disc;
-}
-.report-prose ol {
-  list-style: decimal;
-}
-.report-prose blockquote {
-  @apply my-4 border-s-2 border-accent-500 bg-accent-50 px-4 py-3 text-text-secondary;
-}
-.report-prose code {
-  @apply rounded-sm bg-background-tertiary-default px-1 py-0.5 font-mono text-caption-1-medium;
-}
-.report-prose table {
-  @apply my-4 w-full border-collapse text-caption-1-medium;
-}
-.report-prose th,
-.report-prose td {
-  @apply border border-separator-border px-3 py-2 text-start;
-}
-.report-prose th {
-  @apply bg-background-tertiary-default text-text-secondary;
-}
-.report-prose strong {
-  @apply font-semibold text-text-primary;
-}
-.report-prose pre {
-  @apply my-4 overflow-x-auto rounded-2xl bg-surface-sidebar p-4 text-caption-1-regular leading-relaxed text-text-on-sidebar;
-}
-.report-prose pre code {
-  @apply bg-transparent p-0 text-inherit;
+::selection {
+  background-color: rgb(158 91 56 / 0.16);
 }
 
 .hide-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * Workflow canvas
+ * ---------------------------------------------------------------------- */
+
+.agent-canvas {
+  height: var(--canvas-h, 520px);
+  background-color: #fcfcfe;
+}
+
+.agent-canvas .react-flow__attribution {
+  display: none;
+}
+
+.agent-canvas .react-flow__controls {
+  box-shadow: var(--shadow-card);
+  border: 1px solid rgb(255 255 255 / 0.8);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.8);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.agent-canvas .react-flow__controls-button {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border-bottom: 1px solid var(--color-hairline-soft);
+  color: var(--color-ink-2);
+  fill: currentColor;
+}
+
+.agent-canvas .react-flow__controls-button:hover {
+  background: rgb(0 0 0 / 0.04);
+}
+
+.agent-canvas .react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 10px;
+  max-height: 10px;
+}
+
+.agent-canvas .react-flow__edge-path {
+  stroke: rgb(0 0 0 / 0.22);
+  stroke-width: 1.2;
+}
+
+.agent-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-accent-500);
+  stroke-width: 1.8;
+}
+
+.agent-canvas .react-flow__handle {
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgb(255 255 255 / 0.9);
+  background: rgb(0 0 0 / 0.22);
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.5);
+}
+
+.agent-canvas .react-flow__handle:hover {
+  background: var(--color-accent-500);
+}
+
+.agent-canvas .react-flow__node {
+  font-family: var(--font-sans);
 }

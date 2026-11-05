@@ -5,6 +5,8 @@ import crypto from 'node:crypto'
 import type {
   Agent,
   Bootstrap,
+  EvalCase,
+  EvalFixture,
   GraphEdge,
   GraphNode,
   KnowledgeDoc,
@@ -17,9 +19,12 @@ import type {
   RunDetail,
   RunEvent,
   Stats,
+  TrainingCandidate,
+  TrainingRun,
+  TrainingVersion,
   Workflow,
 } from '../shared/types.js'
-import { PROJECT, seedDatabase, WORKFLOW } from './seed.js'
+import { PROJECT, seedDatabase, seedTraining, WORKFLOW } from './seed.js'
 import { chunkDocument } from './seed.js'
 
 const DATA_DIR = path.resolve(process.cwd(), 'data')
@@ -152,12 +157,54 @@ export function initDb(): DatabaseSync {
     );
 
     CREATE INDEX IF NOT EXISTS idx_events_run ON run_events(run_id, seq);
+
+    -- Agent training: versioned prompts, fixed eval cases, one row per run.
+    CREATE TABLE IF NOT EXISTS agent_versions (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      system_prompt TEXT NOT NULL,
+      score REAL,
+      cases_json TEXT NOT NULL DEFAULT '[]',
+      note TEXT NOT NULL DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_versions ON agent_versions(agent_id, version);
+
+    CREATE TABLE IF NOT EXISTS eval_cases (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      input TEXT NOT NULL,
+      fixture_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS training_runs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      baseline REAL,
+      best REAL,
+      candidates_json TEXT,
+      cost REAL NOT NULL DEFAULT 0,
+      tokens INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_training_agent ON training_runs(agent_id, started_at);
   `)
 
   const count = db.prepare('SELECT COUNT(*) AS n FROM projects').get() as { n: number }
   if (count.n === 0) {
     seedDatabase(db)
   }
+  seedTraining(db)
   return db
 }
 
@@ -600,4 +647,143 @@ export function getBootstrap(mode: Mode): Bootstrap {
     stats: getStats(),
     mode,
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Agent training storage
+ * ------------------------------------------------------------------------ */
+
+function mapVersion(row: Record<string, unknown>): TrainingVersion {
+  return {
+    id: String(row.id),
+    agentId: String(row.agent_id),
+    version: Number(row.version),
+    systemPrompt: String(row.system_prompt),
+    score: row.score === null || row.score === undefined ? undefined : Number(row.score),
+    note: String(row.note ?? ''),
+    isActive: Number(row.is_active) === 1,
+    createdAt: String(row.created_at),
+  }
+}
+
+function mapTrainingRun(row: Record<string, unknown>): TrainingRun {
+  return {
+    id: String(row.id),
+    agentId: String(row.agent_id),
+    status: row.status as TrainingRun['status'],
+    mode: row.mode as Mode,
+    baseline: row.baseline === null || row.baseline === undefined ? undefined : Number(row.baseline),
+    best: row.best === null || row.best === undefined ? undefined : Number(row.best),
+    candidates: parseJson<TrainingCandidate[]>(row.candidates_json as string | null, []),
+    cost: Number(row.cost),
+    tokens: Number(row.tokens),
+    error: row.error ? String(row.error) : undefined,
+    startedAt: String(row.started_at),
+    finishedAt: row.finished_at ? String(row.finished_at) : undefined,
+  }
+}
+
+export function listEvalCases(agentId: string): EvalCase[] {
+  const rows = db.prepare('SELECT * FROM eval_cases WHERE agent_id = ? ORDER BY id').all(agentId) as Record<string, unknown>[]
+  return rows.map((row) => ({
+    id: String(row.id),
+    agentId: String(row.agent_id),
+    title: String(row.title),
+    input: String(row.input),
+    fixture: parseJson<EvalFixture>(row.fixture_json as string, { evidence: [], upstream: [] }),
+    createdAt: String(row.created_at),
+  }))
+}
+
+export function countEvalCases(): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM eval_cases').get() as { n: number }).n
+}
+
+export function listVersions(agentId: string): TrainingVersion[] {
+  const rows = db.prepare('SELECT * FROM agent_versions WHERE agent_id = ? ORDER BY version DESC').all(agentId) as Record<string, unknown>[]
+  return rows.map(mapVersion)
+}
+
+export function countVersions(): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM agent_versions').get() as { n: number }).n
+}
+
+export function createVersion(input: {
+  agentId: string
+  systemPrompt: string
+  score?: number
+  note: string
+}): TrainingVersion {
+  const last = db.prepare('SELECT COALESCE(MAX(version), 0) AS n FROM agent_versions WHERE agent_id = ?').get(input.agentId) as { n: number }
+  const version = last.n + 1
+  const id = `ver-${crypto.randomUUID().slice(0, 8)}`
+  db.prepare(
+    'INSERT INTO agent_versions (id, agent_id, version, system_prompt, score, cases_json, note, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)',
+  ).run(id, input.agentId, version, input.systemPrompt, input.score ?? null, '[]', input.note, new Date().toISOString())
+  const created = listVersions(input.agentId).find((item) => item.id === id)
+  return created ?? { id, agentId: input.agentId, version, systemPrompt: input.systemPrompt, score: input.score, note: input.note, isActive: false, createdAt: new Date().toISOString() }
+}
+
+/** Makes one version the live prompt for its agent and points the agent at it. */
+export function activateVersion(versionId: string): TrainingVersion | undefined {
+  const row = db.prepare('SELECT * FROM agent_versions WHERE id = ?').get(versionId) as Record<string, unknown> | undefined
+  if (!row) return undefined
+  const version = mapVersion(row)
+  db.exec('BEGIN')
+  try {
+    db.prepare('UPDATE agent_versions SET is_active = 0 WHERE agent_id = ?').run(version.agentId)
+    db.prepare('UPDATE agent_versions SET is_active = 1 WHERE id = ?').run(versionId)
+    db.prepare('UPDATE agents SET system_prompt = ? WHERE id = ?').run(version.systemPrompt, version.agentId)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return { ...version, isActive: true }
+}
+
+export function createTrainingRun(agentId: string, mode: Mode): TrainingRun {
+  const run: TrainingRun = {
+    id: `tr-${crypto.randomUUID().slice(0, 8)}`,
+    agentId,
+    status: 'running',
+    mode,
+    candidates: [],
+    cost: 0,
+    tokens: 0,
+    startedAt: new Date().toISOString(),
+  }
+  db.prepare(
+    'INSERT INTO training_runs (id, agent_id, status, mode, baseline, best, candidates_json, cost, tokens, started_at) VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0, ?)',
+  ).run(run.id, run.agentId, run.status, run.mode, run.startedAt)
+  return run
+}
+
+export function updateTrainingRun(id: string, patch: Partial<TrainingRun>): void {
+  const current = getTrainingRun(id)
+  if (!current) return
+  const next = { ...current, ...patch }
+  db.prepare(
+    'UPDATE training_runs SET status = ?, baseline = ?, best = ?, candidates_json = ?, cost = ?, tokens = ?, error = ?, finished_at = ? WHERE id = ?',
+  ).run(
+    next.status,
+    next.baseline ?? null,
+    next.best ?? null,
+    JSON.stringify(next.candidates ?? []),
+    next.cost,
+    next.tokens,
+    next.error ?? null,
+    next.finishedAt ?? null,
+    id,
+  )
+}
+
+export function getTrainingRun(id: string): TrainingRun | undefined {
+  const row = db.prepare('SELECT * FROM training_runs WHERE id = ?').get(id) as Record<string, unknown> | undefined
+  return row ? mapTrainingRun(row) : undefined
+}
+
+export function listTrainingRuns(agentId: string, limit = 8): TrainingRun[] {
+  const rows = db.prepare('SELECT * FROM training_runs WHERE agent_id = ? ORDER BY started_at DESC LIMIT ?').all(agentId, limit) as Record<string, unknown>[]
+  return rows.map(mapTrainingRun)
 }

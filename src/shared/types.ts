@@ -226,3 +226,71 @@ export interface SearchHit {
   text: string
   score: number
 }
+
+/* ---------------------------------------------------------------------------
+ * Agent training
+ * ------------------------------------------------------------------------ */
+
+/** Upstream context a single agent needs, frozen so scores stay comparable. */
+export interface EvalFixture {
+  evidence: Array<{ ref: string; docId: string; docTitle: string; quote: string; score?: number }>
+  upstream: Array<{
+    nodeId: string
+    title: string
+    data?: Record<string, unknown>
+    text?: string
+    citations?: Citation[]
+    verdict?: Verdict
+  }>
+  iteration?: number
+  feedback?: string
+}
+
+/** One fixed evaluation task for a single agent. */
+export interface EvalCase {
+  id: string
+  agentId: string
+  title: string
+  input: string
+  fixture: EvalFixture
+  createdAt: string
+}
+
+/** One prompt candidate scored against the eval set. */
+export interface TrainingCandidate {
+  id: string
+  label: string
+  rationale: string
+  prompt: string
+  scores: number[]
+  average: number
+  tokens: number
+}
+
+/** A single training episode for one agent. */
+export interface TrainingRun {
+  id: string
+  agentId: string
+  status: 'running' | 'done' | 'failed'
+  mode: Mode
+  baseline?: number
+  best?: number
+  candidates: TrainingCandidate[]
+  cost: number
+  tokens: number
+  error?: string
+  startedAt: string
+  finishedAt?: string
+}
+
+/** A stored, activatable prompt version. */
+export interface TrainingVersion {
+  id: string
+  agentId: string
+  version: number
+  systemPrompt: string
+  score?: number
+  note: string
+  isActive: boolean
+  createdAt: string
+}

@@ -1,10 +1,13 @@
 import type {
   Agent,
   Bootstrap,
+  EvalCase,
   KnowledgeDoc,
   Run,
   RunDetail,
   SearchHit,
+  TrainingRun,
+  TrainingVersion,
   Workflow,
 } from '../shared/types'
 
@@ -45,8 +48,15 @@ export const api = {
   deleteDocument: (id: string) => request<{ ok: boolean }>(`/api/documents/${id}`, { method: 'DELETE' }),
   search: (query: string, limit = 6) =>
     request<{ hits: SearchHit[] }>('/api/kb/search', { method: 'POST', body: JSON.stringify({ query, limit }) }),
-  createAgent: (input: { name: string; title: string; description?: string; color?: string; plugins?: string[] }) =>
-    request<{ agent: Agent }>('/api/agents', { method: 'POST', body: JSON.stringify(input) }),
+  createAgent: (input: {
+    name: string
+    title: string
+    description?: string
+    color?: string
+    plugins?: string[]
+    systemPrompt?: string
+    temperature?: number
+  }) => request<{ agent: Agent }>('/api/agents', { method: 'POST', body: JSON.stringify(input) }),
   updateAgent: (id: string, patch: Partial<Agent>) =>
     request<{ agent: Agent }>(`/api/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   updateWorkflow: (patch: { graph?: Workflow['graph']; settings?: Workflow['settings']; name?: string }) =>
@@ -56,5 +66,21 @@ export const api = {
     request<{ run: Run }>('/api/runs', { method: 'POST', body: JSON.stringify({ input }) }),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${id}`),
   cancelRun: (id: string) => request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: 'POST' }),
+  training: (agentId: string) =>
+    request<{ cases: EvalCase[]; versions: TrainingVersion[]; runs: TrainingRun[] }>(
+      `/api/training?agentId=${encodeURIComponent(agentId)}`,
+    ),
+  startTraining: (agentId: string) =>
+    request<{ run: TrainingRun }>('/api/training', { method: 'POST', body: JSON.stringify({ agentId }) }),
+  getTrainingRun: (id: string) => request<{ run: TrainingRun }>(`/api/training/${id}`),
+  activateTraining: (id: string, candidateId: string) =>
+    request<{ agent: Agent; version: TrainingVersion }>(`/api/training/${id}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({ candidateId }),
+    }),
+  activateVersion: (versionId: string) =>
+    request<{ agent: Agent; version: TrainingVersion }>(`/api/training/versions/${versionId}/activate`, {
+      method: 'POST',
+    }),
   reportUrl: (id: string) => `/api/runs/${id}/report`,
 }

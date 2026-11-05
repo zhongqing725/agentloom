@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { RadioGroup } from 'react-aria-components'
 import type { Connection } from '@xyflow/react'
 import {
   RiAddLine,
@@ -10,21 +11,18 @@ import {
   RiDeleteBin6Line,
   RiDraggable,
   RiErrorWarningLine,
-  RiFlashlightLine,
-  RiInformationLine,
-  RiLinkM,
   RiPlayLargeLine,
-  RiRefreshLine,
   RiRobot2Line,
   RiSettings3Line,
   RiSparklingLine,
 } from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
-import { Badge } from '@/components/base/badges/badge'
 import { Button } from '@/components/base/buttons/button'
 import { IconButton } from '@/components/base/buttons/icon-button'
+import { Chip } from '@/components/base/badges/chip'
 import { Input } from '@/components/base/input/input'
+import { RadioCard } from '@/components/base/radio/radio-card'
 import { Switch } from '@/components/base/switch/switch'
 import { Textarea } from '@/components/base/textarea/textarea'
 import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip'
@@ -34,6 +32,7 @@ import {
   PageHeader,
   PluginIcon,
   pluginIconComponent,
+  SectionHead,
   Surface,
 } from '../components/ui'
 import { WorkflowGraph } from '../components/Graph'
@@ -46,26 +45,119 @@ type SpecialistDraft = {
   title: string
   description: string
   plugins: string[]
+  systemPrompt: string
+  temperature: number
 }
 
+/**
+ * The preset library behind 「添加 Agent」. Each template carries its own
+ * contract prompt, so a node dropped on the canvas behaves differently from
+ * the day it is created — the plugins alone only decide *which* strategy
+ * runs, the prompt decides how the role thinks.
+ *
+ * `brief` is the one line the picker shows; `description` is the longer
+ * explanation in the preview panel.
+ */
 const SPECIALISTS = [
   {
     name: '风险审查员',
     title: '独立审查风险、反方证据与下行情形',
-    description: '在报告交付前加入一道独立审查，专门挑战主判断。',
+    brief: '挑战主判断',
+    description: '在主判断形成之后插入一道独立审查：找出被忽略的下行情形、单一来源和过度乐观的假设。',
     plugins: ['cognition.critique'],
+    temperature: 0.4,
+    systemPrompt:
+      '你是独立风险审查员。只审视上游判断的风险面：找出可证伪的假设、单一来源证据、被忽略的下行情形。不要复述结论，不要给出礼貌性的平衡意见。只输出 JSON：{"summary":"","findings":[""],"recommendation":""}',
+  },
+  {
+    name: '反方研究员',
+    title: '专门挑战主判断，找出证伪条件',
+    brief: '站到对立面',
+    description: '假定主判断是错的那一方，给出最强的反驳论据与可观察的证伪信号，供分析师修正。',
+    plugins: ['cognition.debate'],
+    temperature: 0.7,
+    systemPrompt:
+      '你是反方研究员。假定团队的主判断是错的，给出最强的反驳论据、你最想看到的数据缺口，以及出现什么信号就应当推翻结论。不要两边都说。只输出 JSON：{"thesis":"","counterpoints":[""],"falsifiers":[""]}',
+  },
+  {
+    name: '政策研究员',
+    title: '监管口径、政策窗口与落地节奏',
+    brief: '政策与合规',
+    description: '检索监管文件与政策口径，判断哪些结论会因合规收紧而失效，并给出政策窗口的时间判断。',
+    plugins: ['knowledge.retrieve'],
+    temperature: 0.3,
+    systemPrompt:
+      '你是政策研究员。只基于检索到的监管与政策证据回答，区分已生效条款与征求意见稿。每条判断都要能回到条文或官方表述。只输出 JSON：{"summary":"","keyPoints":[""],"evidence":[""]}',
+  },
+  {
+    name: '量化分析师',
+    title: '规模、增速与敏感性的确定性测算',
+    brief: '先算清口径',
+    description: '把报告里的关键数字重算一遍：口径、年化方式、敏感性区间，指出算不通或互相矛盾的地方。',
+    plugins: ['tool.calculator'],
+    temperature: 0.2,
+    systemPrompt:
+      '你是量化分析师。只做确定性的数字核对与测算：复核口径、单位、年化方式，给出关键变量的敏感性区间。算不出来就说明缺哪个输入，不要估算。只输出 JSON：{"checks":[{"number":"","verdict":"","note":""}],"sensitivity":""}',
+  },
+  {
+    name: '用户研究员',
+    title: '真实场景、留存与退货原因',
+    brief: '看场景与留存',
+    description: '用使用场景、留存和退货数据检验“产品力”这类软判断，指出只有出货量没有留存的结论。',
+    plugins: ['knowledge.retrieve'],
+    temperature: 0.4,
+    systemPrompt:
+      '你是用户研究员。只基于检索到的使用数据回答：场景频次、留存曲线、退货原因。把“用户喜欢”这类说法换成可测指标。只输出 JSON：{"summary":"","metrics":[""],"risks":[""]}',
+  },
+  {
+    name: '竞品拆解师',
+    title: '单机成本、体验与渠道的横向对比',
+    brief: '竞品同口径',
+    description: '选 3 个直接竞品，按 BOM、体验指标、渠道与价格逐项对比，指出报告里被笼统概括的竞争判断。',
+    plugins: ['knowledge.retrieve'],
+    temperature: 0.3,
+    systemPrompt:
+      '你是竞品拆解师。选 3 个与前文直接竞争的对手，按成本、体验指标、渠道、价格做同口径对比。没有数据的格子写“缺数据”，不要补。只输出 JSON：{"table":[{"name":"","cost":"","experience":"","channel":"","price":""}],"takeaway":""}',
   },
   {
     name: '数据可视化师',
-    title: '把关键数字整理成图表建议',
-    description: '为市场、产业链和竞争章节生成可执行的图表规格。',
+    title: '把关键数字整理成图表规格',
+    brief: '给数字配图',
+    description: '为市场、产业链、竞争章节各产出一张图的规格：图表类型、轴、单位、数据来源，可直接交给前端。',
     plugins: ['tool.calculator'],
+    temperature: 0.3,
+    systemPrompt:
+      '你是数据可视化师。为报告中的关键数字给出可执行的图表规格：类型、x/y 轴含义与单位、数据点来源引用编号。不要写营销式的图注。只输出 JSON：{"charts":[{"title":"","type":"","x":"","y":"","source":""}]}',
   },
   {
     name: '合规审查员',
-    title: '检查隐私、合规与对外表述',
-    description: '检查引用、免责声明与可能引发合规风险的表述。',
+    title: '隐私、合规与对外表述',
+    brief: '能不能这样说',
+    description: '检查引用授权、免责声明与可能引发合规风险的表述，给出必须修改的句子清单。',
     plugins: ['verify.citations'],
+    temperature: 0.2,
+    systemPrompt:
+      '你是合规审查员。检查报告是否存在隐私采集、未授权引用、绝对化承诺或未标注的预测。逐条给出原句与改法。只输出 JSON：{"issues":[{"quote":"","problem":"","fix":""}],"verdict":""}',
+  },
+  {
+    name: '本地化编辑',
+    title: '中文表达、术语统一与可读性',
+    brief: '改表达不改事实',
+    description: '统一术语与数字格式，拆掉翻译腔和长定语，指出读起来像机器生成的段落。',
+    plugins: ['cognition.critique'],
+    temperature: 0.5,
+    systemPrompt:
+      '你是中文编辑。只改表达不改事实：统一术语、数字与单位格式，拆开长定语和翻译腔。逐条给出原句与改写，并说明问题类型。只输出 JSON：{"edits":[{"before":"","after":"","reason":""}]}',
+  },
+  {
+    name: '数据工程师',
+    title: '多源数据的清洗、对齐与口径统一',
+    brief: '先对齐口径',
+    description: '检查多份资料之间的口径冲突（年份、口径、单位），列出需要对齐的字段与处理建议。',
+    plugins: ['tool.calculator'],
+    temperature: 0.2,
+    systemPrompt:
+      '你是数据工程师。检查多份资料之间的口径冲突：统计年份、统计范围、单位、汇率。列出冲突字段、各自出处与建议采用的统一口径。只输出 JSON：{"conflicts":[{"field":"","values":[""],"suggestion":""}],"normalized":""}',
   },
 ]
 
@@ -109,7 +201,6 @@ export default function WorkflowPage() {
   const [settings, setSettings] = useState(data?.workflow.settings)
   const [error, setError] = useState('')
   const [addOpen, setAddOpen] = useState(false)
-  const [templateIndex, setTemplateIndex] = useState(0)
   const [draft, setDraft] = useState<SpecialistDraft>(() => draftFromTemplate(0))
   const [insertAfter, setInsertAfter] = useState('writer')
   const [creating, setCreating] = useState(false)
@@ -222,7 +313,6 @@ export default function WorkflowPage() {
         ? selectedId
         : insertionTargets.find((node) => node.id === 'writer')?.id ?? insertionTargets[0]?.id ?? ''
     setInsertAfter(preferred)
-    setTemplateIndex(0)
     setDraft(draftFromTemplate(0))
     setError('')
     setAddOpen(true)
@@ -413,6 +503,8 @@ export default function WorkflowPage() {
         title,
         description: draft.description,
         plugins: draft.plugins,
+        systemPrompt: draft.systemPrompt,
+        temperature: draft.temperature,
       })
       const newNodeId = `node-${agent.id}`
       const step = 205
@@ -468,77 +560,19 @@ export default function WorkflowPage() {
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="Orchestration"
         title="编排画布"
-        description="拖动节点、从端口拉线，或把插件卡拖到节点上。运行后，同一张图会变成实时执行状态。"
+        meta={`${data.workflow.name} · ${stats.agents} 个 Agent · ${stats.edges} 条连线 · ${stats.loops} 条回环 · 并发 ${data.workflow.settings.maxConcurrency}`}
         actions={
           <>
             <Button variant="secondary" leadingIcon={RiAddLine} onClick={openAdd}>添加 Agent</Button>
-            <Button variant="secondary" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
+            <Button variant="ghost" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
             <Button leadingIcon={RiPlayLargeLine} onClick={() => setRunOpen(true)}>运行此流程</Button>
           </>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-separator-border pb-3 text-caption-1-medium text-text-secondary">
-        <span className="inline-flex items-center gap-1.5"><RiRobot2Line className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.agents}</strong> 个 Agent</span>
-        <span className="inline-flex items-center gap-1.5"><RiLinkM className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.edges}</strong> 条连线</span>
-        <span className="inline-flex items-center gap-1.5"><RiRefreshLine className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.loops}</strong> 条回环</span>
-        <span className="inline-flex items-center gap-1.5"><RiFlashlightLine className="size-4 text-accent-600" /> 并发 <strong className="font-semibold text-text-primary">{data.workflow.settings.maxConcurrency}</strong></span>
-        <span className="ms-auto hidden items-center gap-1.5 text-text-tertiary xl:flex">
-          <RiInformationLine className="size-3.5" /> 拖动自动保存；按 Delete 删除选中的连线或节点
-        </span>
-      </div>
-
       <div className="relative">
-        <Surface className="overflow-hidden p-0">
-          <div className="flex items-center justify-between gap-4 border-b border-separator-border px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <span className="text-body-2-medium text-text-primary">{data.workflow.name}</span>
-              <span className="inline-flex items-center gap-1.5 text-caption-2-semibold uppercase tracking-[0.12em] text-status-lime-text">
-                <span className="size-1.5 rounded-full bg-current" /> Live graph
-              </span>
-            </div>
-            <div className="hidden items-center gap-3 text-caption-2-medium text-text-tertiary sm:flex">
-              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-status-lime-text" /> 完成</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-accent-500" /> 运行</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-px w-3 border-t border-dashed border-accent-500" /> 回环</span>
-            </div>
-          </div>
-          <div className="hide-scrollbar flex items-center gap-2 overflow-x-auto border-b border-separator-border bg-background-secondary-default px-4 py-2.5">
-            <span className="flex shrink-0 items-center gap-1.5 pe-1 text-caption-1-regular text-text-tertiary">
-              <RiDraggable className="size-3.5" aria-hidden />
-              {selectedAgent ? `点击挂载到「${selectedAgent.name}」` : '拖到节点，或先选中节点'}
-            </span>
-            {data.plugins.map((plugin) => {
-              const active = Boolean(selectedAgent?.plugins.includes(plugin.id))
-              const Icon = pluginIconComponent(plugin.icon)
-              return (
-                <Button
-                  key={plugin.id}
-                  variant={active ? 'secondary' : 'ghost'}
-                  size="xs"
-                  draggable
-                  leadingIcon={Icon}
-                  trailingIcon={active ? RiCheckLine : undefined}
-                  aria-pressed={active}
-                  className={cx(
-                    'shrink-0 rounded-full border px-2.5',
-                    active ? 'border-accent-300 text-accent-700' : 'border-transparent text-text-secondary',
-                    'cursor-grab',
-                  )}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData('text/plain', plugin.id)
-                    event.dataTransfer.effectAllowed = 'copy'
-                  }}
-                  onClick={() => void togglePlugin(plugin.id)}
-                  title={`${plugin.description}${selectedAgent ? ' · 点击切换挂载' : ''}`}
-                >
-                  {plugin.name}
-                </Button>
-              )
-            })}
-          </div>
+        <Surface className="relative overflow-hidden p-0">
           <WorkflowGraph
             graph={graph}
             agents={data.agents}
@@ -550,65 +584,111 @@ export default function WorkflowPage() {
             onEdgesDelete={(edgeIds) => void removeEdges(edgeIds)}
             onPluginDrop={dropPlugin}
             focusNodeId={selectedNode?.id ?? null}
-            height={610}
+            height={600}
           />
+
+          <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start justify-between gap-2">
+            <div className="glass-strong pointer-events-auto flex items-center gap-2 rounded-full py-1.5 pe-3 ps-2.5">
+              <span className="size-1.5 rounded-full bg-status-lime-text" aria-hidden />
+              <span className="text-[12px] font-medium text-text-primary">{data.workflow.name}</span>
+              <span className="text-[10px] text-text-tertiary">已自动保存</span>
+            </div>
+            <div className="glass pointer-events-auto hidden items-center gap-3 rounded-full px-3 py-1.5 text-[10px] text-text-tertiary sm:flex">
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-status-lime-text" /> 完成</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-accent-500" /> 运行</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-px w-3 border-t border-dashed border-accent-500" /> 回环</span>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex justify-center">
+            <div className="glass-strong pointer-events-auto hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-full p-1.5">
+              <span className="hidden shrink-0 items-center gap-1 pe-1.5 ps-1.5 text-[10px] text-text-tertiary sm:flex">
+                <RiDraggable className="size-3" aria-hidden />
+                {selectedAgent ? `挂到「${selectedAgent.name}」` : '插件'}
+              </span>
+              {data.plugins.map((plugin) => {
+                const active = Boolean(selectedAgent?.plugins.includes(plugin.id))
+                const Icon = pluginIconComponent(plugin.icon)
+                return (
+                  <Button
+                    key={plugin.id}
+                    variant={active ? 'secondary' : 'ghost'}
+                    size="xs"
+                    draggable
+                    leadingIcon={Icon}
+                    trailingIcon={active ? RiCheckLine : undefined}
+                    aria-pressed={active}
+                    className={cx('shrink-0 rounded-full cursor-grab', active && 'text-accent-700')}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/plain', plugin.id)
+                      event.dataTransfer.effectAllowed = 'copy'
+                    }}
+                    onClick={() => void togglePlugin(plugin.id)}
+                    title={`${plugin.description}${selectedAgent ? ' · 点击切换挂载' : ''}`}
+                  >
+                    {plugin.name}
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
         </Surface>
 
         {selectedNode && (
           <Surface
             as="aside"
             className={cx(
-              'fixed inset-x-2 bottom-2 z-50 max-h-[72dvh] overflow-y-auto rounded-3xl border border-separator-border bg-background-primary-default p-5 shadow-2xl backdrop-blur-2xl',
-              'lg:absolute lg:bottom-4 lg:end-4 lg:left-auto lg:top-[106px] lg:z-20 lg:max-h-none lg:w-[350px] lg:p-5',
+              'glass-strong fixed inset-x-2 bottom-2 z-50 max-h-[72dvh] overflow-y-auto rounded-3xl p-5',
+              'lg:absolute lg:bottom-4 lg:end-4 lg:left-auto lg:top-[76px] lg:z-20 lg:max-h-none lg:w-[348px]',
             )}
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Node inspector</div>
-                <h2 className="mt-1.5 text-title-2-semibold text-text-primary">{selectedNode.data.label}</h2>
-                <p className="mt-0.5 text-caption-1-regular text-text-tertiary">{selectedNode.data.subtitle}</p>
+                <div className="t-label">节点配置</div>
+                <h2 className="t-h3 mt-1">{selectedNode.data.label}</h2>
+                <p className="mt-0.5 text-[11px] text-text-tertiary">{selectedNode.data.subtitle}</p>
               </div>
               <IconButton icon={RiCloseLine} size="small" aria-label="关闭节点配置" onClick={() => setSelectedId(null)} />
             </div>
 
             {selectedAgent ? (
               <>
-                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-background-tertiary-default p-3">
-                  <span className="grid size-10 place-items-center rounded-xl bg-accent-50 text-accent-600">
-                    <RiRobot2Line className="size-5" aria-hidden />
+                <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-background-tertiary-default p-3">
+                  <span className="grid size-9 place-items-center rounded-[10px] bg-background-primary-default text-accent-600">
+                    <RiRobot2Line className="size-4.5" aria-hidden />
                   </span>
-                  <div className="min-w-0">
-                    <div className="truncate text-body-2-medium text-text-primary">{selectedAgent.name}</div>
-                    <div className="truncate text-caption-1-regular text-text-tertiary">{selectedAgent.title}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-text-primary">{selectedAgent.name}</div>
+                    <div className="truncate text-[11px] text-text-tertiary">{selectedAgent.title}</div>
                   </div>
-                  <Badge color="neutral" className="ms-auto">{selectedAgent.plugins.length}</Badge>
+                  <Chip variant="caption" color="neutral">{selectedAgent.plugins.length}</Chip>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-separator-border p-3">
-                    <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">模型</div>
-                    <div className="mt-1 truncate font-mono text-caption-1-medium text-text-primary">{selectedAgent.model}</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-[12px] bg-background-secondary-default px-3 py-2">
+                    <div className="t-label">模型</div>
+                    <div className="mt-1 truncate font-mono text-[11px] text-text-primary">{selectedAgent.model}</div>
                   </div>
-                  <div className="rounded-xl border border-separator-border p-3">
-                    <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">温度</div>
-                    <div className="mt-1 font-mono text-caption-1-medium text-text-primary">{selectedAgent.temperature.toFixed(1)}</div>
+                  <div className="rounded-[12px] bg-background-secondary-default px-3 py-2">
+                    <div className="t-label">温度</div>
+                    <div className="mt-1 font-mono text-[11px] text-text-primary">{selectedAgent.temperature.toFixed(1)}</div>
                   </div>
                 </div>
 
                 <div className="mt-5">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-caption-1-semibold text-text-secondary">挂载插件</span>
-                    <span className="text-caption-2-regular text-text-tertiary">{selectedAgent.plugins.length}/{data.plugins.length}</span>
+                  <div className="mb-2 flex items-center justify-between px-1">
+                    <span className="text-[12px] font-medium text-text-secondary">挂载插件</span>
+                    <span className="text-[11px] text-text-tertiary">{selectedAgent.plugins.length}/{data.plugins.length}</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {data.plugins.map((plugin) => {
                       const active = selectedAgent.plugins.includes(plugin.id)
                       return (
-                        <div key={plugin.id} className="flex items-center gap-2.5 rounded-xl border border-separator-border px-2.5 py-2">
-                          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-background-tertiary-default text-accent-600">
-                            <PluginIcon name={plugin.icon} size={14} />
+                        <div key={plugin.id} className="flex items-center gap-2.5 rounded-[12px] bg-background-secondary-default px-2.5 py-2">
+                          <span className="grid size-7 shrink-0 place-items-center rounded-[8px] bg-background-primary-default text-accent-600">
+                            <PluginIcon name={plugin.icon} size={13} />
                           </span>
-                          <span className="min-w-0 flex-1 truncate text-caption-1-medium text-text-primary">{plugin.name}</span>
+                          <span className="min-w-0 flex-1 truncate text-[12px] text-text-primary">{plugin.name}</span>
                           <Switch
                             aria-label={`${active ? '卸下' : '挂载'} ${plugin.name}`}
                             size="sm"
@@ -622,38 +702,38 @@ export default function WorkflowPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 border-t border-separator-border pt-4">
-                  <div className="text-caption-1-semibold text-text-secondary">System Prompt</div>
-                  <p className="mt-1.5 line-clamp-5 text-caption-1-regular leading-relaxed text-text-tertiary">
+                <div className="mt-5 border-t border-border-button-default pt-4">
+                  <div className="t-label">System Prompt</div>
+                  <p className="mt-1.5 line-clamp-5 text-[11px] leading-relaxed text-text-tertiary">
                     {selectedAgent.systemPrompt}
                   </p>
                 </div>
               </>
             ) : (
-              <div className="mt-5 flex gap-2 rounded-2xl bg-background-secondary-default p-3 text-caption-1-regular leading-relaxed text-text-secondary">
-                <RiSparklingLine className="mt-0.5 size-4 shrink-0 text-accent-600" aria-hidden />
+              <div className="mt-4 flex gap-2 rounded-[14px] bg-background-secondary-default p-3 text-[11px] leading-relaxed text-text-secondary">
+                <RiSparklingLine className="mt-0.5 size-3.5 shrink-0 text-accent-500" aria-hidden />
                 {selectedNode.type === 'input' ? '研究任务的入口节点，不可删除。' : '可交付成果的出口节点，不可删除。'}
               </div>
             )}
 
-            <div className="mt-5 border-t border-separator-border pt-4">
+            <div className="mt-5 border-t border-border-button-default pt-4">
               <div className="flex items-center justify-between">
-                <span className="text-caption-1-semibold text-text-secondary">连线</span>
-                <span className="text-caption-2-regular text-text-tertiary">{relatedEdges.length}</span>
+                <span className="text-[12px] font-medium text-text-secondary">连线</span>
+                <span className="text-[11px] text-text-tertiary">{relatedEdges.length}</span>
               </div>
               <div className="mt-2 flex flex-col gap-1.5">
                 {relatedEdges.map((edge) => (
                   <div
                     key={edge.id}
                     className={cx(
-                      'flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-caption-1-regular',
-                      edge.kind === 'loop' ? 'border-accent-200 bg-accent-50' : 'border-separator-border',
+                      'flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11px]',
+                      edge.kind === 'loop' ? 'bg-accent-50' : 'bg-background-secondary-default',
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate text-text-secondary">{nodeLabel(edge.source)}</span>
-                    <RiArrowRightLine className="size-3.5 shrink-0 text-accent-600" aria-hidden />
+                    <RiArrowRightLine className="size-3 shrink-0 text-accent-500" aria-hidden />
                     <span className="min-w-0 flex-1 truncate text-text-secondary">{nodeLabel(edge.target)}</span>
-                    {edge.kind === 'loop' && <span className="shrink-0 text-caption-2-semibold text-accent-700">回环</span>}
+                    {edge.kind === 'loop' && <span className="shrink-0 text-[10px] text-accent-700">回环</span>}
                     <TooltipTrigger>
                       <IconButton
                         icon={RiCloseLine}
@@ -666,11 +746,8 @@ export default function WorkflowPage() {
                     </TooltipTrigger>
                   </div>
                 ))}
-                {relatedEdges.length === 0 && <p className="text-caption-2-regular text-text-tertiary">这个节点还没有连线。</p>}
+                {relatedEdges.length === 0 && <p className="text-[11px] text-text-tertiary">这个节点还没有连线。</p>}
               </div>
-              <p className="mt-2 text-caption-2-regular leading-relaxed text-text-tertiary">
-                从节点右侧圆点拖到另一个节点左侧即可连线；形成环路会被拦截。
-              </p>
             </div>
 
             <div className="mt-5 flex flex-col gap-2">
@@ -698,7 +775,7 @@ export default function WorkflowPage() {
         open={runOpen}
         onClose={() => setRunOpen(false)}
         title="运行此流程"
-        subtitle={`${stats.agents} 个 Agent 会按当前画布执行；核查未通过时自动回到写作节点。`}
+        subtitle={`${stats.agents} 个 Agent 会按当前画布执行；核查未通过时自动回到上游节点。`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRunOpen(false)}>取消</Button>
@@ -708,8 +785,8 @@ export default function WorkflowPage() {
       >
         <div className="flex flex-col gap-4">
           <Textarea label="研究任务" rows={5} value={input} onChange={setInput} />
-          <p className="text-caption-1-regular text-text-tertiary">运行会即时开始，执行状态通过 SSE 同步到运行页。</p>
-          {error && <p className="text-caption-1-medium text-status-rose-text">{error}</p>}
+          <p className="t-meta">运行会即时开始，执行状态通过 SSE 同步到运行页。</p>
+          {error && <p className="text-[12px] text-status-rose-text">{error}</p>}
         </div>
       </Modal>
 
@@ -730,94 +807,98 @@ export default function WorkflowPage() {
           </>
         }
       >
-        <div className="flex flex-col gap-5">
-          <div className="grid gap-2 sm:grid-cols-3">
-            {SPECIALISTS.map((template, index) => {
-              const selected = index === templateIndex
-              return (
-                <Button
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+          <div className="flex min-w-0 flex-col">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="t-label">模板</span>
+              <span className="t-meta">{SPECIALISTS.length} 个预设</span>
+            </div>
+            <RadioGroup
+              aria-label="模板"
+              value={draft.name}
+              onChange={(value) => {
+                const index = SPECIALISTS.findIndex((template) => template.name === value)
+                if (index >= 0) setDraft(draftFromTemplate(index))
+              }}
+              className="mt-2 flex max-h-[366px] flex-col gap-1.5 overflow-y-auto pe-1"
+            >
+              {SPECIALISTS.map((template) => (
+                <RadioCard
                   key={template.name}
-                  variant={selected ? 'secondary' : 'ghost'}
-                  onClick={() => {
-                    setTemplateIndex(index)
-                    setDraft(draftFromTemplate(index))
-                  }}
-                  className={cx(
-                    'h-auto w-full items-start justify-start whitespace-normal border p-3 text-left',
-                    '[&>span]:w-full [&>span]:flex-col [&>span]:items-start [&>span]:gap-1',
-                    selected ? 'border-accent-300 bg-accent-50' : 'border-separator-border',
-                  )}
-                  trailingIcon={selected ? RiCheckLine : undefined}
-                >
-                  <span className="text-body-2-medium text-text-primary">{template.name}</span>
-                  <span className="text-caption-2-regular leading-relaxed text-text-secondary">{template.description}</span>
-                </Button>
-              )
-            })}
+                  value={template.name}
+                  title={template.name}
+                  description={template.brief}
+                />
+              ))}
+            </RadioGroup>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-4">
+            <div className="rounded-[16px] bg-background-secondary-default p-3.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-[13px] font-medium text-text-primary">{draft.name}</span>
+                <span className="t-meta">温度 {draft.temperature.toFixed(1)}</span>
+              </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-text-secondary">{draft.description}</p>
+              <p className="mt-2 line-clamp-3 border-t border-border-button-default pt-2 font-mono text-[10.5px] leading-relaxed text-text-tertiary">
+                {draft.systemPrompt}
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {data.plugins.map((plugin) => {
+                  const active = draft.plugins.includes(plugin.id)
+                  const Icon = pluginIconComponent(plugin.icon)
+                  return (
+                    <Button
+                      key={plugin.id}
+                      variant={active ? 'secondary' : 'ghost'}
+                      size="xs"
+                      leadingIcon={Icon}
+                      trailingIcon={active ? RiCheckLine : undefined}
+                      aria-pressed={active}
+                      className={cx(active && 'text-accent-700')}
+                      onClick={() =>
+                        setDraft({
+                          ...draft,
+                          plugins: active
+                            ? draft.plugins.filter((id) => id !== plugin.id)
+                            : [...draft.plugins, plugin.id],
+                        })
+                      }
+                    >
+                      {plugin.name}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+
             <Input label="Agent 名称" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} placeholder="例如：风险审查员" />
             <Input label="一句话职责" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} placeholder="它负责补充哪一类判断" />
-          </div>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-caption-1-semibold text-text-secondary">插入位置</span>
-            <select
-              value={insertAfter}
-              onChange={(event) => setInsertAfter(event.target.value)}
-              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-body-regular text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
-            >
-              {insertionTargets.map((node) => (
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-text-secondary">插入位置</span>
+              <select
+                value={insertAfter}
+                onChange={(event) => setInsertAfter(event.target.value)}
+                className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                {insertionTargets.map((node) => (
                 <option key={node.id} value={node.id}>
                   {node.data.label} 之后{nextNodeOf(node.id) ? ` / ${nextNodeOf(node.id)!.data.label} 之前` : ''}
                 </option>
               ))}
             </select>
           </label>
-          {insertAnchor && insertBefore && (
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-accent-200 bg-accent-50 px-3 py-2.5 text-caption-1-regular text-text-secondary">
-              <span>{insertAnchor.data.label}</span>
-              <RiArrowRightSLine className="size-3.5 text-accent-600" aria-hidden />
-              <strong className="font-semibold text-accent-700">{draft.name.trim() || '新 Agent'}</strong>
-              <RiArrowRightSLine className="size-3.5 text-accent-600" aria-hidden />
-              <span>{insertBefore.data.label}</span>
-            </div>
-          )}
-
-          <div>
-            <span className="text-caption-1-semibold text-text-secondary">预挂插件</span>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {data.plugins.map((plugin) => {
-                const active = draft.plugins.includes(plugin.id)
-                const Icon = pluginIconComponent(plugin.icon)
-                return (
-                  <Button
-                    key={plugin.id}
-                    variant={active ? 'secondary' : 'ghost'}
-                    size="xs"
-                    leadingIcon={Icon}
-                    trailingIcon={active ? RiCheckLine : undefined}
-                    className={cx('rounded-full border', active ? 'border-accent-300 text-accent-700' : 'border-separator-border')}
-                    onClick={() =>
-                      setDraft({
-                        ...draft,
-                        plugins: active
-                          ? draft.plugins.filter((id) => id !== plugin.id)
-                          : [...draft.plugins, plugin.id],
-                      })
-                    }
-                  >
-                    {plugin.name}
-                  </Button>
-                )
-              })}
-            </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-background-secondary-default px-3 py-2.5 text-[12px] text-text-secondary">
+            <span>{insertAnchor?.data.label}</span>
+            <RiArrowRightSLine className="size-3.5 text-accent-500" aria-hidden />
+            <strong className="font-medium text-text-primary">{draft.name.trim() || '新 Agent'}</strong>
+            <RiArrowRightSLine className="size-3.5 text-accent-500" aria-hidden />
+            <span>{insertBefore?.data.label}</span>
+            <span className="t-meta ms-auto">新节点获得唯一 ID，可在运行轨迹中追踪</span>
           </div>
-          <p className="text-caption-1-regular leading-relaxed text-text-tertiary">
-            名称与职责可以改写；其他模型参数沿用模板。新节点会获得唯一 ID，便于在运行轨迹里追踪。
-          </p>
-          {error && <p className="text-caption-1-medium text-status-rose-text">{error}</p>}
+          {error && <p className="text-[12px] text-status-rose-text">{error}</p>}
+          </div>
         </div>
       </Modal>
 
@@ -866,14 +947,14 @@ export default function WorkflowPage() {
       {notice && (
         <div
           className={cx(
-            'fixed bottom-5 end-5 z-[90] flex max-w-[calc(100vw-2rem)] items-start gap-2 rounded-2xl border bg-background-primary-default p-3 text-body-2-regular text-text-primary shadow-xl backdrop-blur-xl',
-            notice.tone === 'warn' ? 'border-status-orange-text/30' : 'border-separator-border',
+            'glass-strong fixed bottom-4 end-4 z-[90] flex max-w-[calc(100vw-2rem)] items-start gap-2 rounded-[16px] p-3 text-[13px]',
+            notice.tone === 'warn' ? 'text-status-orange-text' : 'text-text-primary',
           )}
           role="status"
           aria-live="polite"
         >
-          <span className={cx('mt-0.5 shrink-0', notice.tone === 'warn' ? 'text-status-orange-text' : 'text-status-lime-text')}>
-            {notice.tone === 'ok' ? <RiCheckLine className="size-4" /> : <RiErrorWarningLine className="size-4" />}
+          <span className="mt-0.5 shrink-0">
+            {notice.tone === 'ok' ? <RiCheckLine className="size-4 text-accent-500" /> : <RiErrorWarningLine className="size-4" />}
           </span>
           <span className="min-w-0 flex-1 leading-relaxed">{notice.message}</span>
           <IconButton

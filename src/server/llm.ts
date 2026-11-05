@@ -418,9 +418,69 @@ function mockSpecialist(ctx: AgentContext): NodeOutput {
   }
 }
 
+function bestCitationFor(sentence: string, citations: Citation[]): string | undefined {
+  const tokens = new Set(tokenize(sentence))
+  let best: { id: string; overlap: number } | undefined
+  for (const citation of citations) {
+    let overlap = 0
+    for (const token of tokenize(citation.quote)) {
+      if (tokens.has(token)) overlap += 1
+    }
+    if (best === undefined || overlap > best.overlap) best = { id: citation.id, overlap }
+  }
+  return best?.overlap ? best.id : citations[0]?.id
+}
+
+/**
+ * Mock-mode instruction following.
+ *
+ * The mock writer produces fixed prose, so a prompt change alone would never
+ * move its score. These two explicit constraints — the same sentences the
+ * trainer appends to candidate prompts — let the simulator demonstrate the
+ * training loop offline. A live model reads them as ordinary instructions.
+ */
+function applyWriterConstraints(markdown: string, prompt: string, citations: Citation[]): string {
+  let text = markdown
+  const quotes = citations.map((citation) => citation.quote)
+
+  if (/只允许使用证据原文中出现过的数字|只使用证据中出现过的数字/.test(prompt)) {
+    text = text
+      .split('\n')
+      .filter((line) => {
+        const numbers = numbersIn(line.replace(/^\s*\d+[.)、]\s*/, '').replace(/\[[A-Z]\d+\]/g, ''))
+        if (numbers.length === 0) return true
+        return numbers.every((number) => quotes.some((quote) => numbersIn(quote).includes(number)))
+      })
+      .join('\n')
+  }
+
+  if (/必须给出证据编号|每条结论都要有引用|每条结论必须带引用/.test(prompt)) {
+    text = text
+      .split('\n')
+      .map((line) => {
+        const trimmed = line.trim()
+        if (!trimmed) return line
+        if (/^[#>\-|]/.test(trimmed) || /^\d+\./.test(trimmed)) return line
+        if (/\[[A-Z]\d+\]/.test(trimmed)) return line
+        if (!/[\u4e00-\u9fff]/.test(trimmed)) return line
+        const ref = bestCitationFor(trimmed, citations)
+        if (!ref) return line
+        return trimmed.endsWith('。') ? `${trimmed.slice(0, -1)} [${ref}]。` : `${trimmed} [${ref}]`
+      })
+      .join('\n')
+  }
+
+  if (/不要使用.约|去掉模糊词|避免模糊表述/.test(prompt)) {
+    text = text.replace(/约 ?/g, '')
+  }
+
+  return text
+}
+
 function mockWriter(ctx: AgentContext): NodeOutput {
-  const markdown = ctx.iteration > 0 || ctx.feedback ? reportV2(ctx) : reportV1(ctx)
+  const draft = ctx.iteration > 0 || ctx.feedback ? reportV2(ctx) : reportV1(ctx)
   const citations = allCitations(ctx)
+  const markdown = applyWriterConstraints(draft, ctx.agent.systemPrompt, citations)
   const data = {
     markdown,
     version: ctx.iteration > 0 ? 'v2' : 'v1',
@@ -435,6 +495,12 @@ function mockWriter(ctx: AgentContext): NodeOutput {
     citations,
     usage: usageOf(ctx.agent.systemPrompt + JSON.stringify(ctx.upstream.map((item) => item.output.data)), markdown),
   }
+}
+
+/** Scores one agent output with the same rule-based verifier a run uses. */
+export function scoreAgentOutput(output: NodeOutput, ctx: AgentContext, threshold: number): Verdict {
+  const text = output.markdown ?? output.text ?? ''
+  return deterministicVerdict(text, allCitations(ctx), threshold)
 }
 
 function extractClaims(markdown: string): string[] {

@@ -5,22 +5,31 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Mode } from '../shared/types.js'
 import {
+  activateVersion,
   addDocument,
   createAgent,
+  createTrainingRun,
+  createVersion,
   deleteDocument,
+  getAgent,
   getBootstrap,
   getDb,
   getProject,
   getRun,
   getRunDetail,
+  getTrainingRun,
   initDb,
   listDocuments,
+  listEvalCases,
   listEvents,
   listRuns,
+  listTrainingRuns,
+  listVersions,
   updateAgent,
   updateWorkflow,
 } from './db.js'
 import { executeRun, cancelRun } from './engine.js'
+import { executeTraining } from './trainer.js'
 import { runBus } from './bus.js'
 import { searchKnowledge } from './retrieval.js'
 
@@ -255,6 +264,65 @@ app.post('/api/runs/:id/cancel', async (request, reply) => {
   if (!run) return reply.code(404).send({ error: '运行不存在。' })
   cancelRun(id)
   return { ok: true }
+})
+
+/* ------------------------------------------------------------------ training */
+
+app.get('/api/training', async (request, reply) => {
+  const query = request.query as { agentId?: string } | undefined
+  const agentId = query?.agentId
+  if (!agentId) return reply.code(400).send({ error: 'agentId 不能为空。' })
+  if (!getAgent(agentId)) return reply.code(404).send({ error: 'Agent 不存在。' })
+  return {
+    cases: listEvalCases(agentId),
+    versions: listVersions(agentId),
+    runs: listTrainingRuns(agentId),
+  }
+})
+
+app.post('/api/training', async (request, reply) => {
+  const body = request.body as { agentId?: string } | undefined
+  const agentId = body?.agentId
+  if (!agentId) return reply.code(400).send({ error: 'agentId 不能为空。' })
+  if (!getAgent(agentId)) return reply.code(404).send({ error: 'Agent 不存在。' })
+  const mode = resolveMode()
+  const run = createTrainingRun(agentId, mode)
+  void executeTraining(run.id, agentId, mode).catch((error) => app.log.error(error))
+  return reply.code(201).send({ run })
+})
+
+app.get('/api/training/:id', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const run = getTrainingRun(id)
+  if (!run) return reply.code(404).send({ error: '训练记录不存在。' })
+  return { run }
+})
+
+app.post('/api/training/:id/activate', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = request.body as { candidateId?: string } | undefined
+  const run = getTrainingRun(id)
+  if (!run) return reply.code(404).send({ error: '训练记录不存在。' })
+  if (run.status !== 'done') return reply.code(400).send({ error: '训练还没有结束。' })
+  const candidate = run.candidates.find((item) => item.id === body?.candidateId)
+  if (!candidate) return reply.code(404).send({ error: '候选不存在。' })
+  const agent = getAgent(run.agentId)
+  if (!agent) return reply.code(404).send({ error: 'Agent 不存在。' })
+  const version = createVersion({
+    agentId: run.agentId,
+    systemPrompt: candidate.prompt,
+    score: candidate.average,
+    note: `训练 ${run.id} · ${candidate.label}`,
+  })
+  activateVersion(version.id)
+  return { agent: getAgent(run.agentId), version: activateVersion(version.id) ?? version }
+})
+
+app.post('/api/training/versions/:id/activate', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const activated = activateVersion(id)
+  if (!activated) return reply.code(404).send({ error: '版本不存在。' })
+  return { agent: getAgent(activated.agentId), version: activated }
 })
 
 if (fs.existsSync(WEB_DIST)) {

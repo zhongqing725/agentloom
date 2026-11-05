@@ -3,31 +3,32 @@ import {
   RiArrowRightSLine,
   RiBrainLine,
   RiGitBranchLine,
-  RiPuzzle2Line,
-  RiRobot2Line,
   RiSparklingLine,
   RiToolsLine,
 } from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
-import { Badge } from '@/components/base/badges/badge'
+import { Avatar } from '@/components/base/avatar/avatar'
 import { Button } from '@/components/base/buttons/button'
+import { Chip } from '@/components/base/badges/chip'
 import { Input } from '@/components/base/input/input'
-import { Switch } from '@/components/base/switch/switch'
+import { SwitchCard } from '@/components/base/switch/switch-card'
 import { Textarea } from '@/components/base/textarea/textarea'
 import { cx } from '@/utils/cx'
-import { Modal, PageHeader, PluginIcon, Surface } from '../components/ui'
+import { Modal, PageHeader, PluginIcon, SectionHead, Surface } from '../components/ui'
 import type { Agent } from '../../shared/types'
 
 const ROLE_LABEL: Record<string, string> = {
-  planner: 'Planner',
-  researcher: 'Researcher',
-  analyst: 'Analyst',
-  writer: 'Writer',
-  verifier: 'Verifier',
-  editor: 'Editor',
-  specialist: 'Specialist',
+  planner: '规划',
+  researcher: '研究',
+  analyst: '分析',
+  writer: '撰写',
+  verifier: '核查',
+  editor: '终审',
+  specialist: '专家',
 }
+
+const IMPLEMENTED = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations'])
 
 export default function Team() {
   const { data, refresh } = useApp()
@@ -74,128 +75,93 @@ export default function Team() {
     })
   }
 
+  const mounted = data.agents.filter((agent) => agent.plugins.length > 0).length
+
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="The crew"
         title="Agent 团队"
-        description={`${data.agents.length} 个角色组成一条研究流水线。每个节点都可以挂载能力插件，改变它“想多深、怎么想”。`}
-        actions={
-          <Button
-            variant="secondary"
-            leadingIcon={RiPuzzle2Line}
-            onClick={() => document.getElementById('plugin-library')?.scrollIntoView({ behavior: 'smooth' })}
-          >
-            浏览插件库
-          </Button>
-        }
+        meta={`${data.agents.length} 个角色 · ${data.plugins.length} 个能力插件 · ${mounted} 个节点已挂载 · 点击任意节点编辑`}
       />
 
-      <Surface className="flex flex-col gap-6 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex max-w-3xl gap-3">
-          <RiSparklingLine className="mt-1 size-4 shrink-0 text-accent-600" aria-hidden />
-          <p className="text-headline-regular leading-relaxed text-text-primary">
-            “不是让一个 Agent 什么都会，而是让每个节点在需要的时候，多一种思考方式。”
-          </p>
-        </div>
-        <div className="flex gap-8 lg:shrink-0">
-          {[
-            { value: data.agents.length, label: '角色' },
-            { value: data.plugins.length, label: '能力插件' },
-            { value: data.agents.filter((agent) => agent.plugins.length > 0).length, label: '已挂载' },
-          ].map((item) => (
-            <div key={item.label}>
-              <div className="text-title-1-semibold tracking-[-0.03em] text-text-primary">{item.value}</div>
-              <div className="mt-0.5 text-caption-1-regular text-text-tertiary">{item.label}</div>
-            </div>
-          ))}
-        </div>
-      </Surface>
-
-      <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {data.agents.map((agent, index) => (
-          <Surface
-            as="article"
-            key={agent.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => edit(agent)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return
-              event.preventDefault()
-              edit(agent)
-            }}
-            className={cx(
-              'group cursor-pointer p-5 transition-colors duration-150 hover:bg-background-primary-hover',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring',
-            )}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <span className="grid size-10 place-items-center rounded-2xl bg-accent-50 text-accent-600">
-                <RiRobot2Line className="size-5" aria-hidden />
-              </span>
-              <div className="flex items-center gap-2 text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">
-                {String(index + 1).padStart(2, '0')}
-                <span className="size-1 rounded-full bg-text-tertiary" aria-hidden />
-                {ROLE_LABEL[agent.role] ?? agent.role}
-              </div>
-            </div>
-            <h2 className="mt-5 text-title-3-semibold text-text-primary">{agent.name}</h2>
-            <p className="mt-1 text-caption-1-medium text-accent-600">{agent.title}</p>
-            <p className="mt-3 line-clamp-3 min-h-12 text-body-2-regular leading-relaxed text-text-secondary">{agent.description}</p>
-            <div className="mt-4 flex min-h-6 flex-wrap gap-1.5">
-              {agent.plugins.length === 0 && <span className="text-caption-1-regular text-text-tertiary">未挂载插件</span>}
-              {agent.plugins.map((pluginId) => {
-                const plugin = data.plugins.find((item) => item.id === pluginId)
-                if (!plugin) return null
-                return (
-                  <span
-                    key={pluginId}
-                    className="inline-flex items-center gap-1 rounded-md border border-separator-border px-1.5 py-0.5 text-caption-2-medium text-text-secondary"
-                  >
-                    <PluginIcon name={plugin.icon} size={12} /> {plugin.name}
-                  </span>
-                )
-              })}
-            </div>
-            <div className="mt-4 flex items-center gap-2 border-t border-separator-border pt-3 font-mono text-caption-2-regular text-text-tertiary">
-              <span>{agent.model}</span>
-              <span className="ms-auto">T {agent.temperature.toFixed(1)}</span>
-              <RiArrowRightSLine className="size-4" aria-hidden />
-            </div>
-          </Surface>
-        ))}
-      </section>
-
-      <section className="mt-10 scroll-mt-24" id="plugin-library">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Capability plugins</div>
-            <h2 className="mt-1.5 text-title-1-medium text-text-primary">能力插件库</h2>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(324px,1fr)]">
+        {/* Roster ------------------------------------------------------------- */}
+        <Surface className="panel self-start p-2.5">
+          <div className="flex items-center justify-between px-2 pb-2 pt-1">
+            <span className="t-label">节点</span>
+            <span className="t-meta">模型 · 温度 · 插件</span>
           </div>
-          <p className="max-w-lg text-body-2-regular leading-relaxed text-text-secondary">
-            插件是“认知显卡”：插到任意节点上，改变这个节点的思考过程，而不是整个团队。
-          </p>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {data.plugins.map((plugin) => (
-            <Surface key={plugin.id} className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <span className="grid size-10 place-items-center rounded-2xl bg-accent-50 text-accent-600">
-                  <PluginIcon name={plugin.icon} size={19} />
+          <div className="flex flex-col">
+            {data.agents.map((agent) => (
+              <button
+                key={agent.id}
+                type="button"
+                onClick={() => edit(agent)}
+                className={cx(
+                  'group flex w-full items-center gap-3 rounded-[12px] px-2.5 py-2.5 text-left transition-colors duration-150',
+                  'outline-none hover:bg-background-tertiary-default focus-visible:ring-2 focus-visible:ring-border-focus-ring',
+                )}
+              >
+                <Avatar size="sm" initials={agent.name.slice(0, 1)} alt={agent.name} />
+                <span className="w-[92px] shrink-0">
+                  <span className="block truncate text-[13px] font-medium text-text-primary">{agent.name}</span>
+                  <span className="mt-0.5 block text-[10px] tracking-[0.06em] text-text-placeholder">
+                    {ROLE_LABEL[agent.role] ?? agent.role}
+                  </span>
                 </span>
-                <span className="text-caption-2-semibold uppercase tracking-[0.08em] text-text-tertiary">{plugin.category}</span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-text-tertiary">{agent.title}</span>
+                <span className="hidden shrink-0 items-center gap-2 sm:flex">
+                  <span className="font-mono text-[10px] text-text-placeholder">{agent.model}</span>
+                  <span className="text-[10px] tabular-nums text-text-placeholder">T{agent.temperature.toFixed(1)}</span>
+                  <span className="flex w-[46px] items-center justify-end gap-1 text-text-placeholder">
+                    {agent.plugins.length === 0 ? (
+                      <span className="text-[10px]">未挂载</span>
+                    ) : (
+                      agent.plugins.map((pluginId) => {
+                        const plugin = data.plugins.find((item) => item.id === pluginId)
+                        return plugin ? <PluginIcon key={pluginId} name={plugin.icon} size={11} /> : null
+                      })
+                    )}
+                  </span>
+                </span>
+                <RiArrowRightSLine className="size-3.5 shrink-0 text-text-placeholder transition-colors group-hover:text-accent-500" aria-hidden />
+              </button>
+            ))}
+          </div>
+        </Surface>
+
+        {/* Plugins ------------------------------------------------------------ */}
+        <Surface className="panel flex flex-col p-5">
+          <SectionHead title="能力插件库" aside={<Chip variant="caption" color="neutral">{data.plugins.length}</Chip>} />
+          <p className="t-small mt-1.5">
+            插件是“认知显卡”：插到任意节点上，改变这个节点的思考方式，而不是整个团队。
+          </p>
+          <div className="mt-4 flex flex-col">
+            {data.plugins.map((plugin) => (
+              <div key={plugin.id} className="flex items-start gap-3 border-b border-border-button-default py-3 last:border-b-0">
+                <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-background-tertiary-default text-accent-600">
+                  <PluginIcon name={plugin.icon} size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-[13px] font-medium text-text-primary">{plugin.name}</span>
+                    <Chip variant="caption" color={IMPLEMENTED.has(plugin.id) ? 'lime' : 'neutral'}>
+                      {IMPLEMENTED.has(plugin.id) ? '已实现' : '目录态'}
+                    </Chip>
+                  </div>
+                  <code className="t-code mt-0.5 block">{plugin.id}</code>
+                  <p className="mt-1 text-[11px] leading-relaxed text-text-tertiary">{plugin.description}</p>
+                </div>
               </div>
-              <h3 className="mt-5 text-title-3-semibold text-text-primary">{plugin.name}</h3>
-              <p className="mt-2 min-h-10 text-body-2-regular leading-relaxed text-text-secondary">{plugin.description}</p>
-              <div className="mt-4 flex items-center gap-4 border-t border-separator-border pt-3 text-caption-1-regular text-text-tertiary">
-                <span className="inline-flex items-center gap-1.5"><RiToolsLine className="size-3.5" /> 节点级挂载</span>
-                <span className="inline-flex items-center gap-1.5"><RiGitBranchLine className="size-3.5" /> 可组合</span>
-              </div>
-            </Surface>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+          <div className="mt-auto flex items-center gap-4 pt-4 text-[10.5px] text-text-tertiary">
+            <span className="inline-flex items-center gap-1.5"><RiToolsLine className="size-3.5" /> 节点级挂载</span>
+            <span className="inline-flex items-center gap-1.5"><RiGitBranchLine className="size-3.5" /> 可组合</span>
+            <span className="inline-flex items-center gap-1.5"><RiSparklingLine className="size-3.5" /> 改变执行策略</span>
+          </div>
+        </Surface>
+      </div>
 
       <Modal
         open={Boolean(selected && draft)}
@@ -206,12 +172,12 @@ export default function Team() {
         footer={
           <>
             <Button variant="secondary" onClick={() => { setSelected(null); setDraft(null) }}>取消</Button>
-            <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存节点配置'}</Button>
+            <Button onClick={() => void save()} disabled={saving}>{saving ? '保存中…' : '保存节点配置'}</Button>
           </>
         }
       >
         {draft && (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="flex flex-col gap-4">
               <Input label="角色定位" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} />
               <Textarea
@@ -230,45 +196,32 @@ export default function Team() {
                 />
               </div>
             </div>
-            <aside className="min-w-0 border-t border-separator-border pt-5 lg:border-s lg:border-t-0 lg:ps-6 lg:pt-0">
-              <div className="flex items-center gap-2">
-                <RiBrainLine className="size-4 text-accent-600" aria-hidden />
-                <span className="text-body-2-medium text-text-primary">挂载能力</span>
-                <Badge color="neutral" className="ms-auto">{draft.plugins.length}</Badge>
+
+            <aside className="flex min-w-0 flex-col gap-2">
+              <div className="flex items-center gap-2 px-1">
+                <RiBrainLine className="size-4 text-accent-500" aria-hidden />
+                <span className="text-[13px] font-medium text-text-primary">挂载能力</span>
+                <Chip variant="caption" color="neutral" className="ms-auto">{draft.plugins.length}</Chip>
               </div>
-              <p className="mt-1.5 text-caption-1-regular leading-relaxed text-text-tertiary">
-                同一个插件可以挂到不同节点。运行时，它会改变该节点的执行策略。
-              </p>
-              <div className="mt-4 flex flex-col gap-2">
-                {data.plugins.map((plugin) => {
-                  const active = draft.plugins.includes(plugin.id)
-                  return (
-                    <div key={plugin.id} className="flex items-center gap-2.5 rounded-2xl border border-separator-border px-3 py-2">
-                      <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-background-tertiary-default text-accent-600">
-                        <PluginIcon name={plugin.icon} size={14} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-caption-1-medium text-text-primary">{plugin.name}</div>
-                        <div className="text-caption-2-regular text-text-tertiary">{plugin.category}</div>
-                      </div>
-                      <Switch
-                        aria-label={`挂载 ${plugin.name}`}
-                        size="sm"
-                        isSelected={active}
-                        onChange={() => togglePlugin(plugin.id)}
-                      />
-                    </div>
-                  )
-                })}
+              <div className="flex flex-col gap-2">
+                {data.plugins.map((plugin) => (
+                  <SwitchCard
+                    key={plugin.id}
+                    title={plugin.name}
+                    description={plugin.category}
+                    isSelected={draft.plugins.includes(plugin.id)}
+                    onChange={() => togglePlugin(plugin.id)}
+                  />
+                ))}
               </div>
-              <div className="mt-4 flex gap-2 rounded-2xl bg-background-secondary-default p-3 text-caption-1-regular leading-relaxed text-text-tertiary">
-                <RiGitBranchLine className="mt-0.5 size-3.5 shrink-0 text-accent-600" aria-hidden />
-                建议只在关键节点挂载“发散思考”，避免每个节点都多想，推高延迟与成本。
+              <div className="mt-2 flex gap-2 rounded-[14px] bg-background-secondary-default p-3 text-[11px] leading-relaxed text-text-tertiary">
+                <RiSparklingLine className="mt-0.5 size-3.5 shrink-0 text-accent-500" aria-hidden />
+                建议只在关键节点挂载「发散思考」，避免每个节点都多想，推高延迟与成本。
               </div>
             </aside>
           </div>
         )}
-        {error && <p className="mt-3 text-caption-1-medium text-status-rose-text">{error}</p>}
+        {error && <p className="mt-3 text-[12px] text-status-rose-text">{error}</p>}
       </Modal>
     </div>
   )
