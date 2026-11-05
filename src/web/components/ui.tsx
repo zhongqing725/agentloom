@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -58,17 +58,13 @@ export function PageHeader({
   )
 }
 
-export function Surface({
-  as: Tag = 'div',
-  className,
-  children,
-  ...props
-}: {
+type SurfaceProps = HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'section' | 'article' | 'aside'
   className?: string
   children: ReactNode
-  [key: string]: unknown
-}) {
+}
+
+export function Surface({ as: Tag = 'div', className, children, ...props }: SurfaceProps) {
   return (
     <Tag
       {...props}
