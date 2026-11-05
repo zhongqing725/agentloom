@@ -1,0 +1,196 @@
+/*
+ * AgentLoom theme for BoardUI.
+ *
+ * One semantic token layer: BoardUI's tokens are re-pointed to the product
+ * palette here. Components never carry raw colors.
+ */
+
+@theme {
+  /* Controls are 12px; cards use Tailwind's 24px 3xl radius. */
+  --radius-2lg: 12px;
+  --radius-3xl: 24px;
+
+  /* App-only semantic surfaces. BoardUI covers the rest. */
+  --color-surface-sidebar: #161617;
+  --color-surface-sidebar-hover: rgb(255 255 255 / 0.07);
+  --color-surface-sidebar-active: rgb(255 255 255 / 0.1);
+  --color-separator-sidebar: rgb(255 255 255 / 0.08);
+  --color-text-on-sidebar: #f5f5f7;
+  --color-text-on-sidebar-muted: #9a9a9f;
+  --color-text-on-sidebar-faint: #6e6e73;
+  --color-surface-overlay: rgb(0 0 0 / 0.38);
+}
+
+:root {
+  color-scheme: light;
+  --radius-2lg: 12px;
+
+  /* System SF / PingFang stack; no Google Fonts or next/font. */
+  --font-inter: "SF Pro Display", "SF Pro Text", -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  --font-mono-source: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* Copper accent ramp — single accent, all interactive states derive here. */
+  --color-accent-50: color-mix(in srgb, #b56245 5%, white);
+  --color-accent-100: color-mix(in srgb, #b56245 10%, white);
+  --color-accent-200: color-mix(in srgb, #b56245 20%, white);
+  --color-accent-300: color-mix(in srgb, #b56245 34%, white);
+  --color-accent-400: color-mix(in srgb, #b56245 58%, white);
+  --color-accent-500: #b56245;
+  --color-accent-600: #96492f;
+  --color-accent-700: color-mix(in srgb, #b56245 74%, #1d1d1f);
+  --color-accent-800: color-mix(in srgb, #b56245 58%, #1d1d1f);
+  --color-accent-900: color-mix(in srgb, #b56245 40%, #1d1d1f);
+  --color-accent-950: color-mix(in srgb, #b56245 24%, #1d1d1f);
+
+  /* Titanium page, glass cards, graphite ink. */
+  --color-background-full: #f5f5f7;
+  --color-background-primary-default: rgb(255 255 255 / 0.78);
+  --color-background-primary-hover: rgb(255 255 255 / 0.94);
+  --color-background-primary-active: rgb(255 255 255 / 0.99);
+  --color-background-primary-disabled: rgb(255 255 255 / 0.42);
+  --color-background-secondary-default: rgb(255 255 255 / 0.5);
+  --color-background-secondary-hover: rgb(255 255 255 / 0.68);
+  --color-background-tertiary-default: rgb(0 0 0 / 0.045);
+  --color-background-tertiary-hover: rgb(0 0 0 / 0.07);
+  --color-background-inner-default: rgb(255 255 255 / 0.7);
+
+  --color-text-primary: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-tertiary: #8e8e93;
+  --color-text-placeholder: #8e8e93;
+
+  --color-separator-border: rgb(0 0 0 / 0.08);
+  --color-border-button-default: rgb(0 0 0 / 0.09);
+  --color-border-button-hover: rgb(0 0 0 / 0.16);
+  --color-border-button-active: rgb(0 0 0 / 0.22);
+  --color-border-focus-ring: #b56245;
+  --color-border-table: rgb(0 0 0 / 0.08);
+
+  --color-foreground-icon-primary: #1d1d1f;
+  --color-foreground-icon-secondary: #6e6e73;
+  --color-foreground-icon-tertiary: #8e8e93;
+  --color-foreground-icon-quaternary: #c7c7cc;
+
+  /* Neutral ghost action, not a second accent surface. */
+  --color-button-ghost-background: transparent;
+  --color-button-ghost-hover: rgb(0 0 0 / 0.04);
+  --color-button-ghost-active: rgb(0 0 0 / 0.07);
+  --color-button-ghost-foreground: #1d1d1f;
+  --color-button-ghost-disabled: transparent;
+  --color-button-ghost-disabled-foreground: #8e8e93;
+
+  --color-pill-tab-blue-selected-background: rgb(255 255 255 / 0.9);
+  --color-pill-tab-blue-hover-background: rgb(255 255 255 / 0.45);
+  --color-segmented-control-background: rgb(0 0 0 / 0.045);
+  --color-segmented-control-selected-background: rgb(255 255 255 / 0.96);
+  --color-tab-count-selected-background: var(--color-accent-100);
+
+  --shadow-card:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 18px 52px rgb(0 0 0 / 0.06),
+    inset 0 1px 0 rgb(255 255 255 / 0.72);
+  --shadow-dropdown:
+    0 2px 6px rgb(0 0 0 / 0.06),
+    0 18px 48px rgb(0 0 0 / 0.12);
+  --shadow-sidebar:
+    0 0 0 1px rgb(255 255 255 / 0.04),
+    0 18px 48px rgb(0 0 0 / 0.16);
+}
+
+/* Apple-like press: darken only, never scale. */
+.button-press-motion:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: none;
+}
+
+/* App page entrance: 4px rise + 2px blur, removed after the animation so it
+ * never creates a containing block for fixed overlays. */
+@keyframes app-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.app-page {
+  animation: app-page-enter 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-page {
+    animation: none;
+  }
+}
+
+/* Report prose is the one place serif is allowed, plus the wordmark. */
+.report-serif {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC",
+    "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+}
+
+.brand-wordmark {
+  font-family: "Iowan Old Style", "Palatino Linotype", "Source Han Serif SC",
+    "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+}
+
+body {
+  min-height: 100dvh;
+  background-color: var(--color-background-full);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* Markdown generated by react-markdown; the only document-reading surface. */
+.report-prose {
+  @apply text-body-regular text-text-primary;
+  line-height: 1.9;
+}
+.report-prose h1 {
+  @apply mb-4 text-title-1-medium text-text-primary;
+}
+.report-prose h2 {
+  @apply mt-8 mb-3 border-t border-separator-border pt-6 text-title-2-medium text-text-primary;
+}
+.report-prose h3 {
+  @apply mt-6 mb-2 text-title-3-semibold text-text-primary;
+}
+.report-prose p {
+  @apply mb-3;
+}
+.report-prose ul,
+.report-prose ol {
+  @apply mb-4 flex flex-col gap-1.5 ps-5;
+}
+.report-prose ul {
+  list-style: disc;
+}
+.report-prose ol {
+  list-style: decimal;
+}
+.report-prose blockquote {
+  @apply my-4 border-s-2 border-accent-500 bg-accent-50 px-4 py-3 text-text-secondary;
+}
+.report-prose code {
+  @apply rounded-sm bg-background-tertiary-default px-1 py-0.5 font-mono text-caption-1-medium;
+}
+.report-prose table {
+  @apply my-4 w-full border-collapse text-caption-1-medium;
+}
+.report-prose th,
+.report-prose td {
+  @apply border border-separator-border px-3 py-2 text-start;
+}
+.report-prose th {
+  @apply bg-background-tertiary-default text-text-secondary;
+}
+.report-prose strong {
+  @apply font-semibold text-text-primary;
+}

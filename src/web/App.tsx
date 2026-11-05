@@ -1,21 +1,29 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BrowserRouter, NavLink, useLocation, useNavigate, Routes, Route } from 'react-router-dom'
 import {
-  Activity,
-  BookOpen,
-  Boxes,
-  ChevronRight,
-  LayoutDashboard,
-  Network,
-  Play,
-  Settings,
-  Sparkles,
-  Users,
-  X,
-} from 'lucide-react'
+  RiArrowRightSLine,
+  RiBookOpenLine,
+  RiCloseLine,
+  RiDashboardLine,
+  RiFlowChart,
+  RiLineChartLine,
+  RiMenuLine,
+  RiPlayLargeLine,
+  RiSettings3Line,
+  RiSparklingLine,
+  RiStackLine,
+  RiTeamLine,
+} from '@remixicon/react'
 import type { Bootstrap } from '../shared/types'
 import { api } from './api'
-import { Modal, Pill } from './components/ui'
+import { Modal } from './components/ui'
+import { Button } from '@/components/base/buttons/button'
+import { IconButton } from '@/components/base/buttons/icon-button'
+import { Input } from '@/components/base/input/input'
+import { Spinner } from '@/components/base/spinner/spinner'
+import { Textarea } from '@/components/base/textarea/textarea'
+import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip'
+import { cx } from '@/utils/cx'
 import Overview from './pages/Overview'
 import Knowledge from './pages/Knowledge'
 import Team from './pages/Team'
@@ -43,7 +51,7 @@ function AppProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const next = await api.bootstrap()
       setData(next)
@@ -53,21 +61,21 @@ function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void refresh()
-  }, [])
+  }, [refresh])
 
   return <AppContext.Provider value={{ data, loading, error, refresh }}>{children}</AppContext.Provider>
 }
 
 const NAV = [
-  { to: '/', label: '总览', icon: LayoutDashboard, end: true },
-  { to: '/knowledge', label: '知识库', icon: BookOpen },
-  { to: '/team', label: 'Agent 团队', icon: Users },
-  { to: '/workflow', label: '编排画布', icon: Network },
-  { to: '/evals', label: '评测', icon: Activity },
+  { to: '/', label: '总览', icon: RiDashboardLine, end: true },
+  { to: '/knowledge', label: '知识库', icon: RiBookOpenLine },
+  { to: '/team', label: 'Agent 团队', icon: RiTeamLine },
+  { to: '/workflow', label: '编排画布', icon: RiFlowChart },
+  { to: '/evals', label: '评测', icon: RiLineChartLine },
 ]
 
 const TITLES: Record<string, string> = {
@@ -78,25 +86,38 @@ const TITLES: Record<string, string> = {
   '/evals': '评测',
 }
 
-function Sidebar({ onSettings }: { onSettings: () => void }) {
+function Sidebar({ onSettings, onClose }: { onSettings: () => void; onClose?: () => void }) {
   const { data } = useApp()
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">
-          <span />
-          <span />
-          <span />
-          <span />
+    <aside className="flex h-full flex-col bg-surface-sidebar px-4 pb-4 pt-5 text-text-on-sidebar">
+      <div className="flex items-center gap-3 px-2 pb-7">
+        <div className="grid size-9 shrink-0 grid-cols-2 gap-[3px] rounded-[11px] bg-text-on-sidebar p-2">
+          <span className="rounded-[2px] bg-surface-sidebar" />
+          <span className="rounded-[2px] bg-accent-500" />
+          <span className="rounded-[2px] bg-accent-500" />
+          <span className="rounded-[2px] bg-surface-sidebar" />
         </div>
-        <div>
-          <div className="brand-cn">织序</div>
-          <div className="brand-en">AGENTLOOM</div>
+        <div className="min-w-0">
+          <div className="brand-wordmark text-title-3-semibold tracking-[0.12em]">织序</div>
+          <div className="mt-0.5 text-caption-2-semibold uppercase tracking-[0.24em] text-text-on-sidebar-faint">
+            Agentloom
+          </div>
         </div>
+        {onClose && (
+          <IconButton
+            icon={RiCloseLine}
+            size="small"
+            aria-label="关闭导航"
+            onClick={onClose}
+            className="ms-auto border-transparent bg-transparent text-text-on-sidebar-muted shadow-none hover:bg-surface-sidebar-hover hover:text-text-on-sidebar"
+          />
+        )}
       </div>
 
-      <div className="side-label">工作台</div>
-      <nav className="nav">
+      <div className="px-2 pb-2 text-caption-2-semibold uppercase tracking-[0.16em] text-text-on-sidebar-faint">
+        工作台
+      </div>
+      <nav className="flex flex-col gap-1" aria-label="主导航">
         {NAV.map((item) => {
           const Icon = item.icon
           return (
@@ -104,45 +125,86 @@ function Sidebar({ onSettings }: { onSettings: () => void }) {
               key={item.to}
               to={item.to}
               end={item.end}
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              onClick={onClose}
+              className={({ isActive }) =>
+                cx(
+                  'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-body-2-medium transition-colors duration-150',
+                  isActive
+                    ? 'bg-surface-sidebar-active text-text-on-sidebar'
+                    : 'text-text-on-sidebar-muted hover:bg-surface-sidebar-hover hover:text-text-on-sidebar',
+                )
+              }
             >
-              <Icon size={17} strokeWidth={1.8} />
-              <span>{item.label}</span>
-              <ChevronRight size={13} className="nav-arrow" />
+              {({ isActive }) => (
+                <>
+                  <Icon
+                    className={cx('size-[18px] shrink-0', isActive ? 'text-accent-300' : 'text-text-on-sidebar-faint')}
+                    aria-hidden
+                  />
+                  <span className="truncate">{item.label}</span>
+                </>
+              )}
             </NavLink>
           )
         })}
       </nav>
 
-      <div className="side-label">当前项目</div>
-      <div className="project-card">
-        <div className="project-icon">
-          <Boxes size={16} />
-        </div>
-        <div>
-          <strong>{data?.project.name ?? 'AI 眼镜产业链研究'}</strong>
-          <span>{data?.project.scenario ?? '产业投研'} · {data?.stats.docs ?? 0} 篇资料</span>
+      <div className="mt-7 px-2 pb-2 text-caption-2-semibold uppercase tracking-[0.16em] text-text-on-sidebar-faint">
+        当前项目
+      </div>
+      <div className="rounded-2xl border border-separator-sidebar bg-surface-sidebar-hover p-3">
+        <div className="flex items-start gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-accent-500/20 text-accent-300">
+            <RiStackLine className="size-4" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-body-2-medium text-text-on-sidebar">
+              {data?.project.name ?? 'AI 眼镜产业链研究'}
+            </div>
+            <div className="mt-0.5 text-caption-1-regular text-text-on-sidebar-faint">
+              {data?.project.scenario ?? '产业投研'} · {data?.stats.docs ?? 0} 篇资料
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="sidebar-foot">
-        <div className="mode-box">
-          <span className={`mode-dot ${data?.mode === 'live' ? 'live' : ''}`} />
-          <div>
-            <strong>{data?.mode === 'live' ? 'Live 模型' : 'Mock 演示'}</strong>
-            <span>{data?.mode === 'live' ? 'DeepSeek 已连接' : '无需 Key 即可运行'}</span>
+      <div className="mt-auto pt-5">
+        <div className="flex items-center gap-2.5 rounded-2xl border border-separator-sidebar bg-surface-sidebar-hover px-3 py-2.5">
+          <span
+            className={cx(
+              'size-1.5 shrink-0 rounded-full',
+              data?.mode === 'live' ? 'bg-status-lime-text' : 'bg-status-yellow-text',
+            )}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="text-caption-1-semibold text-text-on-sidebar">
+              {data?.mode === 'live' ? 'Live 模型' : 'Mock 演示'}
+            </div>
+            <div className="mt-0.5 text-caption-2-regular text-text-on-sidebar-faint">
+              {data?.mode === 'live' ? 'DeepSeek 已连接' : '无需 Key 即可运行'}
+            </div>
           </div>
-          <button className="icon-btn subtle" onClick={onSettings} aria-label="模型设置">
-            <Settings size={15} />
-          </button>
+          <TooltipTrigger>
+            <IconButton
+              icon={RiSettings3Line}
+              size="small"
+              aria-label="模型设置"
+              onClick={onSettings}
+              className="border-transparent bg-transparent text-text-on-sidebar-muted shadow-none hover:bg-surface-sidebar-hover hover:text-text-on-sidebar"
+            />
+            <Tooltip>模型与运行设置</Tooltip>
+          </TooltipTrigger>
         </div>
-        <div className="side-version">v0.1 · 赛道一 · Agent 编排创新应用</div>
+        <div className="px-1 pt-3 text-caption-2-regular tracking-[0.04em] text-text-on-sidebar-faint">
+          v0.1 · 赛道一 · Agent 编排创新应用
+        </div>
       </div>
     </aside>
   )
 }
 
 function StartRunButton() {
+  const { data } = useApp()
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState(
     '请生成一份面向投资决策的 AI 眼镜产业链研究报告，重点回答市场空间、价值链分配、竞争格局与主要风险。',
@@ -152,6 +214,7 @@ function StartRunButton() {
   const navigate = useNavigate()
 
   const start = async () => {
+    if (!input.trim()) return
     setLoading(true)
     setError(null)
     try {
@@ -167,52 +230,62 @@ function StartRunButton() {
 
   return (
     <>
-      <button className="btn btn-dark" onClick={() => setOpen(true)}>
-        <Play size={14} fill="currentColor" />
+      <Button leadingIcon={RiPlayLargeLine} onClick={() => setOpen(true)}>
         新建运行
-      </button>
+      </Button>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
         title="启动一次团队运行"
-        subtitle="研究任务会交给 8 个 Agent 协作完成，并在核查节点自动回环。"
+        subtitle={`${data?.stats.agents ?? 8} 个 Agent 会协作完成研究，并在核查节点自动回环。`}
         footer={
           <>
-            <button className="btn btn-ghost" onClick={() => setOpen(false)}>取消</button>
-            <button className="btn btn-accent" onClick={start} disabled={loading || !input.trim()}>
+            <Button variant="secondary" onClick={() => setOpen(false)}>取消</Button>
+            <Button onClick={start} disabled={loading || !input.trim()}>
               {loading ? '正在启动…' : '开始运行'}
-            </button>
+            </Button>
           </>
         }
       >
-        <label className="field">
-          <span>研究任务</span>
-          <textarea
+        <form
+          id="start-run-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void start()
+          }}
+          className="flex flex-col gap-4"
+        >
+          <Textarea
+            label="研究任务"
             rows={5}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
+            onChange={setInput}
             placeholder="例如：分析 AI 眼镜产业链的投资价值…"
           />
-        </label>
-        <div className="prompt-presets">
-          {[
-            'AI 眼镜产业链的投资价值与风险',
-            '2026 年 AI 眼镜市场空间与竞争格局',
-            '从 BOM 看 AI 眼镜的价值池分配',
-          ].map((preset) => (
-            <button
-              key={preset}
-              className="preset"
-              onClick={() =>
-                setInput(`请生成一份面向投资决策的研究报告：${preset}。重点回答市场空间、价值链分配、竞争格局与主要风险。`)
-              }
-            >
-              <Sparkles size={12} />
-              {preset}
-            </button>
-          ))}
-        </div>
-        {error && <div className="form-error">{error}</div>}
+          <div className="flex flex-col gap-2">
+            <span className="text-caption-1-semibold text-text-tertiary">快捷任务</span>
+            {[
+              'AI 眼镜产业链的投资价值与风险',
+              '2026 年 AI 眼镜市场空间与竞争格局',
+              '从 BOM 看 AI 眼镜的价值池分配',
+            ].map((preset) => (
+              <Button
+                key={preset}
+                type="button"
+                variant="secondary"
+                size="small"
+                leadingIcon={RiSparklingLine}
+                className="w-full justify-start"
+                onClick={() =>
+                  setInput(`请生成一份面向投资决策的研究报告：${preset}。重点回答市场空间、价值链分配、竞争格局与主要风险。`)
+                }
+              >
+                {preset}
+              </Button>
+            ))}
+          </div>
+        </form>
+        {error && <p className="mt-3 text-caption-1-medium text-status-rose-text">{error}</p>}
       </Modal>
     </>
   )
@@ -260,40 +333,41 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
       subtitle="默认使用 Mock 演示模式；填入 DeepSeek API Key 后即可切换为真实模型。"
       footer={
         <>
-          <button className="btn btn-ghost" onClick={onClose}>关闭</button>
-          <button className="btn btn-accent" onClick={save} disabled={saving}>
-            {saving ? '保存中…' : '保存设置'}
-          </button>
+          <Button variant="secondary" onClick={onClose}>关闭</Button>
+          <Button onClick={save} disabled={saving}>{saving ? '保存中…' : '保存设置'}</Button>
         </>
       }
     >
-      <div className="settings-state">
-        <Pill tone={config.mode === 'live' ? 'green' : 'amber'}>
+      <div className="mb-5 flex items-center gap-2.5 rounded-2xl border border-separator-border bg-background-secondary-default px-3 py-2.5">
+        <span
+          className={cx(
+            'size-1.5 rounded-full',
+            config.mode === 'live' ? 'bg-status-lime-text' : 'bg-status-yellow-text',
+          )}
+        />
+        <span className="text-body-2-medium text-text-primary">
           {config.mode === 'live' ? 'Live 模式' : 'Mock 演示模式'}
-        </Pill>
-        <span>{config.hasKey ? '服务端已检测到 API Key' : '服务端未配置 API Key'}</span>
+        </span>
+        <span className="text-caption-1-regular text-text-tertiary">
+          {config.hasKey ? '服务端已检测到 API Key' : '服务端未配置 API Key'}
+        </span>
       </div>
-      <label className="field">
-        <span>DeepSeek API Key</span>
-        <input
+      <div className="flex flex-col gap-4">
+        <Input
+          label="DeepSeek API Key"
           type="password"
           value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
+          onChange={setApiKey}
           placeholder={config.hasKey ? '已配置，留空则不修改' : 'sk-…'}
         />
-      </label>
-      <label className="field">
-        <span>Base URL</span>
-        <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
-      </label>
-      <label className="field">
-        <span>模型</span>
-        <input value={model} onChange={(event) => setModel(event.target.value)} />
-      </label>
-      <p className="hint">
-        Key 只保存在当前服务进程内，不会写入数据库。生产环境请使用环境变量 <code>AGENTLOOM_API_KEY</code>。
-      </p>
-      {message && <div className="form-note">{message}</div>}
+        <Input label="Base URL" value={baseUrl} onChange={setBaseUrl} />
+        <Input label="模型" value={model} onChange={setModel} />
+        <p className="text-caption-1-regular leading-relaxed text-text-tertiary">
+          Key 只保存在当前服务进程内，不会写入数据库。生产环境请使用环境变量{' '}
+          <code className="rounded-sm bg-background-tertiary-default px-1 py-0.5 font-mono">AGENTLOOM_API_KEY</code>。
+        </p>
+        {message && <p className="text-caption-1-medium text-text-secondary">{message}</p>}
+      </div>
     </Modal>
   )
 }
@@ -309,55 +383,104 @@ function Shell() {
     return TITLES[location.pathname] ?? '织序 AgentLoom'
   }, [location.pathname])
 
+  useEffect(() => {
+    if (!mobileNav) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [mobileNav])
+
   if (loading) {
     return (
-      <div className="boot">
-        <div className="brand-mark large">
-          <span /><span /><span /><span />
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background-full text-text-secondary">
+        <div className="grid size-14 grid-cols-2 gap-1 rounded-2xl bg-text-primary p-3">
+          <span className="rounded-sm bg-background-full" />
+          <span className="rounded-sm bg-accent-500" />
+          <span className="rounded-sm bg-accent-500" />
+          <span className="rounded-sm bg-background-full" />
         </div>
-        <strong>正在织入工作台…</strong>
+        <div className="flex items-center gap-2 text-body-regular">
+          <Spinner size="sm" aria-hidden /> 正在织入工作台…
+        </div>
       </div>
     )
   }
 
   if (error || !data) {
     return (
-      <div className="boot error">
-        <strong>无法连接 AgentLoom API</strong>
-        <p>{error}</p>
-        <p className="hint">请先在项目目录运行 <code>pnpm dev</code>。</p>
+      <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-background-full px-6 text-center">
+        <div className="text-title-2-semibold text-text-primary">无法连接 AgentLoom API</div>
+        <p className="max-w-md text-body-regular text-text-secondary">{error}</p>
+        <p className="text-caption-1-regular text-text-tertiary">
+          请先在项目目录运行 <code className="rounded-sm bg-background-tertiary-default px-1 py-0.5 font-mono">pnpm dev</code>。
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="app-shell">
-      <div className={`mobile-overlay ${mobileNav ? 'show' : ''}`} onClick={() => setMobileNav(false)} />
-      <div className={`sidebar-wrap ${mobileNav ? 'show' : ''}`}>
-        <Sidebar onSettings={() => { setSettingsOpen(true); setMobileNav(false) }} />
-      </div>
-      <div className="main">
-        <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="打开导航">
-            <span /><span /><span />
-          </button>
-          <div className="breadcrumb">
-            <span>织序工作台</span>
-            <ChevronRight size={12} />
-            <strong>{title}</strong>
+    <div className="min-h-dvh bg-background-full font-sans text-text-primary">
+      <button
+        type="button"
+        aria-label="关闭导航"
+        onClick={() => setMobileNav(false)}
+        className={cx(
+          'fixed inset-0 z-40 bg-surface-overlay transition-opacity duration-200 lg:hidden',
+          mobileNav ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+        )}
+      />
+      <aside
+        className={cx(
+          'fixed inset-y-0 start-0 z-50 w-[272px] transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:w-[248px] lg:translate-x-0',
+          mobileNav ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        <Sidebar
+          onSettings={() => {
+            setSettingsOpen(true)
+            setMobileNav(false)
+          }}
+          onClose={() => setMobileNav(false)}
+        />
+      </aside>
+
+      <div className="min-h-dvh lg:ps-[248px]">
+        <header className="sticky top-0 z-30 flex h-15 items-center gap-3 border-b border-separator-border bg-background-primary-default px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+          <IconButton
+            icon={RiMenuLine}
+            size="small"
+            aria-label="打开导航"
+            onClick={() => setMobileNav(true)}
+            className="lg:hidden"
+          />
+          <div className="flex min-w-0 items-center gap-2 text-caption-1-regular text-text-tertiary">
+            <span className="hidden sm:inline">织序工作台</span>
+            <RiArrowRightSLine className="hidden size-3.5 sm:block" aria-hidden />
+            <span className="truncate text-body-2-medium text-text-primary">{title}</span>
           </div>
-          <div className="topbar-right">
-            <div className={`mode-pill ${data.mode === 'live' ? 'live' : ''}`}>
-              <span className="mode-dot" />
+          <div className="ms-auto flex items-center gap-2">
+            <div className="hidden items-center gap-1.5 text-caption-1-medium text-text-secondary sm:flex">
+              <span
+                className={cx(
+                  'size-1.5 rounded-full',
+                  data.mode === 'live' ? 'bg-status-lime-text' : 'bg-status-yellow-text',
+                )}
+              />
               {data.mode === 'live' ? 'Live' : 'Mock'}
             </div>
-            <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="设置">
-              <Settings size={17} />
-            </button>
+            <IconButton
+              icon={RiSettings3Line}
+              aria-label="设置"
+              onClick={() => setSettingsOpen(true)}
+              className="hidden sm:inline-flex"
+            />
             <StartRunButton />
           </div>
         </header>
-        <main className="content">
+
+        <main className="mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/knowledge" element={<Knowledge />} />
@@ -368,6 +491,7 @@ function Shell() {
           </Routes>
         </main>
       </div>
+
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
