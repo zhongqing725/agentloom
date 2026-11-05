@@ -19,14 +19,22 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Bot, FileText, Play, PlugZap, ShieldCheck, X } from 'lucide-react'
+import {
+  RiCloseLine,
+  RiFileTextLine,
+  RiLoader4Line,
+  RiPlayLargeLine,
+  RiPlugLine,
+  RiRobot2Line,
+  RiShieldCheckLine,
+} from '@remixicon/react'
 import type { Agent, GraphEdge, GraphNode, PluginDef } from '../../shared/types'
+import { cx } from '@/utils/cx'
 import { PluginIcon } from './ui'
 
 type FlowNodeData = {
   label: string
   subtitle?: string
-  color: string
   kind: string
   status?: string
   score?: number
@@ -44,16 +52,38 @@ type LoomEdgeData = {
   [key: string]: unknown
 }
 
+const KIND_BAR: Record<string, string> = {
+  input: 'bg-text-tertiary',
+  agent: 'bg-accent-500',
+  verifier: 'bg-text-primary',
+  output: 'bg-accent-600',
+}
+
 function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
   const [dragOver, setDragOver] = useState(false)
   const status = data.status ?? 'pending'
-  const Icon = data.kind === 'input' ? Play : data.kind === 'output' ? FileText : data.kind === 'verifier' ? ShieldCheck : Bot
+  const Icon =
+    data.kind === 'input'
+      ? RiPlayLargeLine
+      : data.kind === 'output'
+        ? RiFileTextLine
+        : data.kind === 'verifier'
+          ? RiShieldCheckLine
+          : RiRobot2Line
   const acceptsPlugin = Boolean(data.droppable)
 
   return (
     <div
-      className={`loom-node kind-${data.kind} status-${status} ${selected ? 'selected' : ''} ${dragOver ? 'drop-active' : ''}`}
-      style={{ '--node-color': data.color } as CSSProperties}
+      className={cx(
+        'agent-node group relative flex w-[176px] overflow-hidden rounded-2xl border bg-background-primary-default shadow-card',
+        'transition-[border-color,box-shadow] duration-150 hover:shadow-md',
+        selected ? 'border-accent-500 ring-2 ring-accent-500/20' : 'border-border-button-default',
+        status === 'running' && 'border-accent-500 ring-2 ring-accent-500/15',
+        status === 'completed' && 'border-status-lime-text/30',
+        status === 'failed' && 'border-status-rose-text/40',
+        status === 'waiting' && 'border-status-orange-text/40',
+        dragOver && 'border-accent-500 ring-2 ring-accent-500/25',
+      )}
       onDragEnter={(event) => {
         if (!acceptsPlugin || !event.dataTransfer.types.includes('text/plain')) return
         event.preventDefault()
@@ -76,38 +106,52 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
         if (pluginId) data.onPluginDrop?.(pluginId)
       }}
     >
-      {data.kind !== 'input' && <Handle type="target" position={Position.Left} className="loom-handle" />}
-      <div className="loom-node-bar" style={{ background: data.color }} />
-      <div className="loom-node-body">
-        <div className="loom-node-top">
-          <span className="loom-node-icon" style={{ background: `${data.color}18`, color: data.color }}>
-            <Icon size={15} />
+      {data.kind !== 'input' && <Handle type="target" position={Position.Left} className="canvas-handle" />}
+      <div className={cx('w-1 shrink-0', KIND_BAR[data.kind] ?? 'bg-accent-500')} aria-hidden />
+      <div className="min-w-0 flex-1 px-3 py-2.5">
+        <div className="flex items-center gap-1.5">
+          <span className="grid size-6 shrink-0 place-items-center rounded-md bg-background-tertiary-default text-accent-600">
+            <Icon className="size-3.5" aria-hidden />
           </span>
-          <span className="loom-node-kind">{data.kind === 'agent' ? 'AGENT' : data.kind.toUpperCase()}</span>
-          {status === 'running' && <span className="loom-spinner" />}
-          {status === 'queued' && <span className="loom-queued">QUEUED</span>}
-          {data.score !== undefined && <span className="loom-score">{Math.round((data.score ?? 0) * 100)}</span>}
+          <span className="text-caption-2-semibold uppercase tracking-[0.12em] text-text-tertiary">
+            {data.kind === 'agent' ? 'Agent' : data.kind}
+          </span>
+          {status === 'running' && <RiLoader4Line className="ms-auto size-3.5 animate-spin text-accent-600" aria-label="执行中" />}
+          {status === 'queued' && (
+            <span className="ms-auto rounded-sm bg-status-yellow-background px-1 py-0.5 text-caption-2-semibold text-status-yellow-text">
+              排队
+            </span>
+          )}
+          {data.score !== undefined && (
+            <span className="ms-auto rounded-sm bg-status-lime-background px-1 py-0.5 text-caption-2-semibold text-status-lime-text">
+              {Math.round(data.score * 100)}
+            </span>
+          )}
         </div>
-        <strong>{data.label}</strong>
-        {data.subtitle && <small>{data.subtitle}</small>}
-        <div className="loom-node-foot">
-          <div className="loom-plugins">
+        <div className="mt-2 truncate text-body-2-medium text-text-primary">{data.label}</div>
+        {data.subtitle && <div className="mt-0.5 truncate text-caption-1-regular text-text-tertiary">{data.subtitle}</div>}
+        <div className="mt-2 flex min-h-4 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5 text-text-tertiary">
             {(data.pluginDefs ?? []).slice(0, 3).map((plugin) => (
-              <span key={plugin.id} title={plugin.name} style={{ color: plugin.color }}>
+              <span key={plugin.id} title={plugin.name}>
                 <PluginIcon name={plugin.icon} size={12} />
               </span>
             ))}
             {(data.pluginDefs ?? []).length > 3 && (
-              <span className="loom-plugin-more">+{(data.pluginDefs ?? []).length - 3}</span>
+              <span className="font-mono text-caption-2-medium">+{(data.pluginDefs ?? []).length - 3}</span>
             )}
           </div>
-          {data.iteration !== undefined && data.iteration > 0 && <span className="loom-iter">L{data.iteration + 1}</span>}
+          {data.iteration !== undefined && data.iteration > 0 && (
+            <span className="rounded-sm bg-accent-100 px-1 py-0.5 font-mono text-caption-2-semibold text-accent-700">
+              L{data.iteration + 1}
+            </span>
+          )}
         </div>
       </div>
-      {data.kind !== 'output' && <Handle type="source" position={Position.Right} className="loom-handle" />}
+      {data.kind !== 'output' && <Handle type="source" position={Position.Right} className="canvas-handle" />}
       {dragOver && (
-        <span className="loom-drop-hint">
-          <PlugZap size={14} /> 松开挂载插件
+        <span className="pointer-events-none absolute inset-1.5 z-20 flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-accent-500 bg-background-primary-default/95 text-caption-1-semibold text-accent-700">
+          <RiPlugLine className="size-4" aria-hidden /> 松开挂载
         </span>
       )}
     </div>
@@ -145,14 +189,18 @@ function LoomEdgeView({
       <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} interactionWidth={24} />
       <EdgeLabelRenderer>
         <div
-          className={`loom-edge-label ${loop ? 'loop' : ''} ${selected ? 'selected' : ''}`}
+          className={cx('pointer-events-none absolute z-10 flex items-center gap-1', selected && 'z-20')}
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
         >
-          {label ? <span className="loom-edge-text">{label}</span> : null}
+          {label ? (
+            <span className="whitespace-nowrap rounded-md border border-separator-border bg-background-primary-default px-1.5 py-0.5 text-caption-2-medium text-text-secondary shadow-xs">
+              {label}
+            </span>
+          ) : null}
           {selected && edgeData?.onDelete ? (
             <button
               type="button"
-              className="loom-edge-delete"
+              className="pointer-events-auto grid size-6 place-items-center rounded-full border-2 border-background-primary-default bg-accent-500 text-text-white shadow-md outline-none transition-colors duration-150 hover:bg-accent-600 focus-visible:ring-2 focus-visible:ring-border-focus-ring"
               title="删除这条连线"
               aria-label="删除这条连线"
               onMouseDown={(event) => event.stopPropagation()}
@@ -161,7 +209,7 @@ function LoomEdgeView({
                 edgeData?.onDelete?.(id)
               }}
             >
-              <X size={11} />
+              <RiCloseLine className="size-3.5" aria-hidden />
             </button>
           ) : null}
         </div>
@@ -235,7 +283,6 @@ export function WorkflowGraph({
         data: {
           label: node.data.label,
           subtitle: node.data.subtitle,
-          color: agent?.color ?? (node.type === 'input' ? '#2F6F6A' : node.type === 'output' ? '#D4552D' : '#5B5F9E'),
           kind: node.type,
           status: info?.status ?? 'pending',
           score: info?.score,
@@ -265,9 +312,12 @@ export function WorkflowGraph({
       },
       style:
         edge.kind === 'loop'
-          ? { stroke: '#D4552D', strokeWidth: 1.4, strokeDasharray: '5 4' }
-          : { stroke: '#B9AE9D', strokeWidth: 1.3 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: edge.kind === 'loop' ? '#D4552D' : '#B9AE9D' },
+          ? { stroke: 'var(--color-accent-500)', strokeWidth: 1.4, strokeDasharray: '5 4' }
+          : { stroke: 'var(--color-border-button-active)', strokeWidth: 1.3 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: edge.kind === 'loop' ? 'var(--color-accent-500)' : 'var(--color-border-button-active)',
+      },
     }))
   }, [graph, onEdgesDelete, readOnly])
 
@@ -298,7 +348,7 @@ export function WorkflowGraph({
   }, [initialEdges, setEdges])
 
   return (
-    <div className="workflow-canvas" style={{ '--canvas-h': `${height}px` } as CSSProperties}>
+    <div className="agent-canvas" style={{ '--canvas-h': `${height}px` } as CSSProperties}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -323,13 +373,15 @@ export function WorkflowGraph({
         minZoom={0.28}
         maxZoom={1.4}
         connectionRadius={32}
-        connectionLineStyle={{ stroke: '#D4552D', strokeWidth: 1.8 }}
+        connectionLineStyle={{ stroke: 'var(--color-accent-500)', strokeWidth: 1.8 }}
         proOptions={{ hideAttribution: true }}
         defaultEdgeOptions={{ type: 'loom' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#CFC6B8" />
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
         <Controls showInteractive={false} />
-        <div className="canvas-touch-hint">拖动平移 · 双指缩放 · 点节点看配置</div>
+        <div className="agent-canvas-hint pointer-events-none absolute right-3 top-3 z-10 rounded-lg border border-separator-border bg-background-primary-default/90 px-2 py-1 text-caption-2-medium text-text-tertiary backdrop-blur md:hidden">
+          拖动画布 · 双指缩放
+        </div>
       </ReactFlow>
     </div>
   )

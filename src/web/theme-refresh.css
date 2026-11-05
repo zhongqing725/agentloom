@@ -757,3 +757,85 @@ body {
   .feed-item { grid-template-columns: 46px 5px minmax(0, 1fr); font-size: 8.5px; }
   .run-tabs > button span { padding: 1px 4px; }
 }
+
+/* ===========================================================================
+   BoardUI canvas layer — React Flow stays custom; only tokens and chrome.
+   =========================================================================== */
+
+.agent-canvas {
+  height: min(var(--canvas-h, 520px), calc(100dvh - 190px));
+  min-height: 380px;
+  background: var(--color-background-full);
+}
+
+.agent-canvas .react-flow__background {
+  color: var(--color-border-button-default);
+}
+
+.agent-canvas .react-flow__background pattern circle {
+  fill: var(--color-border-button-active);
+}
+
+.agent-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--color-border-button-default);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.agent-canvas .react-flow__controls-button {
+  width: 28px;
+  height: 28px;
+  border-bottom: 1px solid var(--color-separator-border);
+  background: var(--color-background-primary-default);
+  color: var(--color-text-secondary);
+}
+
+.agent-canvas .react-flow__controls-button:hover {
+  background: var(--color-background-primary-hover);
+  color: var(--color-text-primary);
+}
+
+.agent-canvas .react-flow__controls-button svg {
+  max-width: 10px;
+  max-height: 10px;
+  fill: currentColor;
+}
+
+.canvas-handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 2px solid var(--color-background-primary-default) !important;
+  background: var(--color-text-tertiary) !important;
+  opacity: 0.9;
+  transition: background-color 150ms ease, opacity 150ms ease;
+}
+
+.canvas-handle:hover {
+  background: var(--color-accent-500) !important;
+  opacity: 1;
+}
+
+.agent-node:hover .canvas-handle {
+  background: var(--color-accent-500) !important;
+}
+
+.react-flow__edge-path {
+  transition: stroke 150ms ease, stroke-width 150ms ease;
+}
+
+.react-flow__edge:hover .react-flow__edge-path,
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-accent-500) !important;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 2px !important;
+}
+
+@media (max-width: 760px) {
+  .agent-canvas {
+    height: min(var(--canvas-h, 520px), 58dvh);
+    min-height: 330px;
+  }
+}

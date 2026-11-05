@@ -26,8 +26,12 @@ const PLUGIN_ICONS = {
   check: RiCheckboxCircleLine,
 } as const
 
+export function pluginIconComponent(name: string) {
+  return PLUGIN_ICONS[name as keyof typeof PLUGIN_ICONS] ?? RiBookOpenLine
+}
+
 export function PluginIcon({ name, size = 14, className }: { name: string; size?: number; className?: string }) {
-  const Icon = PLUGIN_ICONS[name as keyof typeof PLUGIN_ICONS] ?? RiBookOpenLine
+  const Icon = pluginIconComponent(name)
   return <Icon size={size} className={className} aria-hidden />
 }
 

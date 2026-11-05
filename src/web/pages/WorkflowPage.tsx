@@ -1,26 +1,41 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Connection } from '@xyflow/react'
 import {
-  ArrowRight,
-  Bot,
-  Check,
-  GitBranch,
-  GripVertical,
-  Info,
-  Link2,
-  Play,
-  Plus,
-  SlidersHorizontal,
-  Sparkles,
-  Trash2,
-  Users,
-  Workflow,
-  X,
-} from 'lucide-react'
+  RiAddLine,
+  RiArrowRightLine,
+  RiArrowRightSLine,
+  RiCheckLine,
+  RiCloseLine,
+  RiDeleteBin6Line,
+  RiDraggable,
+  RiErrorWarningLine,
+  RiFlashlightLine,
+  RiInformationLine,
+  RiLinkM,
+  RiPlayLargeLine,
+  RiRefreshLine,
+  RiRobot2Line,
+  RiSettings3Line,
+  RiSparklingLine,
+} from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
-import { Modal, PageHeader, Pill, PluginIcon } from '../components/ui'
+import { Badge } from '@/components/base/badges/badge'
+import { Button } from '@/components/base/buttons/button'
+import { IconButton } from '@/components/base/buttons/icon-button'
+import { Input } from '@/components/base/input/input'
+import { Switch } from '@/components/base/switch/switch'
+import { Textarea } from '@/components/base/textarea/textarea'
+import { Tooltip, TooltipTrigger } from '@/components/base/tooltip/tooltip'
+import { cx } from '@/utils/cx'
+import {
+  Modal,
+  PageHeader,
+  PluginIcon,
+  pluginIconComponent,
+  Surface,
+} from '../components/ui'
 import { WorkflowGraph } from '../components/Graph'
 import type { GraphNode, Workflow as WorkflowModel } from '../../shared/types'
 
@@ -30,7 +45,6 @@ type SpecialistDraft = {
   name: string
   title: string
   description: string
-  color: string
   plugins: string[]
 }
 
@@ -39,21 +53,18 @@ const SPECIALISTS = [
     name: '风险审查员',
     title: '独立审查风险、反方证据与下行情形',
     description: '在报告交付前加入一道独立审查，专门挑战主判断。',
-    color: '#8C4A2F',
     plugins: ['cognition.critique'],
   },
   {
     name: '数据可视化师',
     title: '把关键数字整理成图表建议',
     description: '为市场、产业链和竞争章节生成可执行的图表规格。',
-    color: '#2F6F6A',
     plugins: ['tool.calculator'],
   },
   {
     name: '合规审查员',
     title: '检查隐私、合规与对外表述',
     description: '检查引用、免责声明与可能引发合规风险的表述。',
-    color: '#5B5F9E',
     plugins: ['verify.citations'],
   },
 ]
@@ -401,7 +412,6 @@ export default function WorkflowPage() {
         name,
         title,
         description: draft.description,
-        color: draft.color,
         plugins: draft.plugins,
       })
       const newNodeId = `node-${agent.id}`
@@ -456,86 +466,76 @@ export default function WorkflowPage() {
   }
 
   return (
-    <div className="page workflow-page">
+    <div className="app-page">
       <PageHeader
-        eyebrow="ORCHESTRATION"
+        eyebrow="Orchestration"
         title="编排画布"
-        description="拖动节点、从端口拉线，或把插件卡拖到节点上；选中连线即可删除。运行后，同一张图会变成实时执行状态。"
+        description="拖动节点、从端口拉线，或把插件卡拖到节点上。运行后，同一张图会变成实时执行状态。"
         actions={
           <>
-            <button className="btn btn-ghost" onClick={openAdd}>
-              <Plus size={15} /> 添加 Agent
-            </button>
-            <button className="btn btn-ghost" onClick={() => setSettingsOpen(true)}>
-              <SlidersHorizontal size={15} /> 调度设置
-            </button>
-            <button className="btn btn-accent" onClick={() => setRunOpen(true)}>
-              <Play size={14} fill="currentColor" /> 运行此流程
-            </button>
+            <Button variant="secondary" leadingIcon={RiAddLine} onClick={openAdd}>添加 Agent</Button>
+            <Button variant="secondary" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
+            <Button leadingIcon={RiPlayLargeLine} onClick={() => setRunOpen(true)}>运行此流程</Button>
           </>
         }
       />
 
-      <div className="workflow-meta">
-        <div className="flow-meta-item"><Bot size={15} /><strong>{stats.agents}</strong><span>个 Agent</span></div>
-        <div className="flow-meta-item"><Link2 size={15} /><strong>{stats.edges}</strong><span>条连线</span></div>
-        <div className="flow-meta-item"><Workflow size={15} /><strong>{stats.loops}</strong><span>条回环</span></div>
-        <div className="flow-meta-item"><Users size={15} /><strong>{data.workflow.settings.maxConcurrency}</strong><span>并发上限</span></div>
-        <div className="flow-meta-note">
-          <Info size={14} />
-          <span>拖动节点调整布局并自动保存；按 Delete 可删除选中的连线或节点。</span>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-separator-border pb-3 text-caption-1-medium text-text-secondary">
+        <span className="inline-flex items-center gap-1.5"><RiRobot2Line className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.agents}</strong> 个 Agent</span>
+        <span className="inline-flex items-center gap-1.5"><RiLinkM className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.edges}</strong> 条连线</span>
+        <span className="inline-flex items-center gap-1.5"><RiRefreshLine className="size-4 text-accent-600" /> <strong className="font-semibold text-text-primary">{stats.loops}</strong> 条回环</span>
+        <span className="inline-flex items-center gap-1.5"><RiFlashlightLine className="size-4 text-accent-600" /> 并发 <strong className="font-semibold text-text-primary">{data.workflow.settings.maxConcurrency}</strong></span>
+        <span className="ms-auto hidden items-center gap-1.5 text-text-tertiary xl:flex">
+          <RiInformationLine className="size-3.5" /> 拖动自动保存；按 Delete 删除选中的连线或节点
+        </span>
       </div>
 
-      <div className="workflow-layout">
-        <div className="panel canvas-panel">
-          <div className="canvas-toolbar">
-            <div>
-              <span className="canvas-title">{data.workflow.name}</span>
-              <Pill tone="teal">LIVE GRAPH</Pill>
+      <div className="relative">
+        <Surface className="overflow-hidden p-0">
+          <div className="flex items-center justify-between gap-4 border-b border-separator-border px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-body-2-medium text-text-primary">{data.workflow.name}</span>
+              <span className="inline-flex items-center gap-1.5 text-caption-2-semibold uppercase tracking-[0.12em] text-status-lime-text">
+                <span className="size-1.5 rounded-full bg-current" /> Live graph
+              </span>
             </div>
-            <div className="canvas-legend">
-              <span><i className="legend-dot green" /> 完成</span>
-              <span><i className="legend-dot teal" /> 运行</span>
-              <span><i className="legend-line" /> 回环</span>
-              <span className="legend-tip">点连线后可删除</span>
+            <div className="hidden items-center gap-3 text-caption-2-medium text-text-tertiary sm:flex">
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-status-lime-text" /> 完成</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-accent-500" /> 运行</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-px w-3 border-t border-dashed border-accent-500" /> 回环</span>
             </div>
           </div>
-          <div className="plugin-drawer">
-            <span className="plugin-drawer-label">
-              <GripVertical size={12} />
-              {selectedAgent
-                ? `拖到节点，或点击挂载到「${selectedAgent.name}」`
-                : '拖一张插件卡到节点上，或先选中节点再点击'}
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-separator-border bg-background-secondary-default px-4 py-2.5">
+            <span className="flex shrink-0 items-center gap-1.5 pe-1 text-caption-1-regular text-text-tertiary">
+              <RiDraggable className="size-3.5" aria-hidden />
+              {selectedAgent ? `点击挂载到「${selectedAgent.name}」` : '拖到节点，或先选中节点'}
             </span>
             {data.plugins.map((plugin) => {
               const active = Boolean(selectedAgent?.plugins.includes(plugin.id))
+              const Icon = pluginIconComponent(plugin.icon)
               return (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={active}
-                  aria-disabled={pluginBusy === plugin.id}
-                  className={`plugin-drag ${active ? 'active' : ''}`}
+                <Button
                   key={plugin.id}
+                  variant={active ? 'secondary' : 'ghost'}
+                  size="xs"
                   draggable
+                  leadingIcon={Icon}
+                  trailingIcon={active ? RiCheckLine : undefined}
+                  aria-pressed={active}
+                  className={cx(
+                    'shrink-0 rounded-full border px-2.5',
+                    active ? 'border-accent-300 text-accent-700' : 'border-transparent text-text-secondary',
+                    'cursor-grab',
+                  )}
                   onDragStart={(event) => {
                     event.dataTransfer.setData('text/plain', plugin.id)
                     event.dataTransfer.effectAllowed = 'copy'
                   }}
                   onClick={() => void togglePlugin(plugin.id)}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter' && event.key !== ' ') return
-                    event.preventDefault()
-                    void togglePlugin(plugin.id)
-                  }}
-                  style={{ '--plugin-color': plugin.color } as CSSProperties}
                   title={`${plugin.description}${selectedAgent ? ' · 点击切换挂载' : ''}`}
                 >
-                  <PluginIcon name={plugin.icon} size={12} />
                   {plugin.name}
-                  {active && <Check size={10} />}
-                </span>
+                </Button>
               )
             })}
           </div>
@@ -551,137 +551,146 @@ export default function WorkflowPage() {
             onPluginDrop={dropPlugin}
             height={610}
           />
-        </div>
+        </Surface>
 
-        <aside className={`panel inspector ${selectedNode ? 'is-open' : ''}`}>
-          {selectedNode ? (
-            <>
-              <div className="inspector-head">
-                <div className="inspector-head-row">
-                  <div className="eyebrow">NODE INSPECTOR</div>
-                  <button
-                    className="icon-btn inspector-close"
-                    onClick={() => setSelectedId(null)}
-                    aria-label="关闭节点配置"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                <h2>{selectedNode.data.label}</h2>
-                <p>{selectedNode.data.subtitle}</p>
+        {selectedNode && (
+          <Surface
+            as="aside"
+            className={cx(
+              'fixed inset-x-2 bottom-2 z-50 max-h-[72dvh] overflow-y-auto rounded-3xl border border-separator-border bg-background-primary-default p-5 shadow-2xl backdrop-blur-2xl',
+              'lg:absolute lg:bottom-4 lg:end-4 lg:left-auto lg:top-[106px] lg:z-20 lg:max-h-none lg:w-[350px] lg:p-5',
+            )}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Node inspector</div>
+                <h2 className="mt-1.5 text-title-2-semibold text-text-primary">{selectedNode.data.label}</h2>
+                <p className="mt-0.5 text-caption-1-regular text-text-tertiary">{selectedNode.data.subtitle}</p>
               </div>
-              {selectedAgent ? (
-                <>
-                  <div className="inspector-agent">
-                    <div className="agent-avatar" style={{ background: `${selectedAgent.color}18`, color: selectedAgent.color }}>
-                      <Bot size={22} />
-                    </div>
-                    <div>
-                      <strong>{selectedAgent.name}</strong>
-                      <span>{selectedAgent.title}</span>
-                    </div>
+              <IconButton icon={RiCloseLine} size="small" aria-label="关闭节点配置" onClick={() => setSelectedId(null)} />
+            </div>
+
+            {selectedAgent ? (
+              <>
+                <div className="mt-5 flex items-center gap-3 rounded-2xl bg-background-tertiary-default p-3">
+                  <span className="grid size-10 place-items-center rounded-xl bg-accent-50 text-accent-600">
+                    <RiRobot2Line className="size-5" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-body-2-medium text-text-primary">{selectedAgent.name}</div>
+                    <div className="truncate text-caption-1-regular text-text-tertiary">{selectedAgent.title}</div>
                   </div>
-                  <div className="inspector-section">
-                    <span className="inspector-label">模型</span>
-                    <div className="inspector-value mono">{selectedAgent.model}</div>
+                  <Badge color="neutral" className="ms-auto">{selectedAgent.plugins.length}</Badge>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-separator-border p-3">
+                    <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">模型</div>
+                    <div className="mt-1 truncate font-mono text-caption-1-medium text-text-primary">{selectedAgent.model}</div>
                   </div>
-                  <div className="inspector-section">
-                    <span className="inspector-label">温度</span>
-                    <div className="temp-bar">
-                      <span style={{ width: `${selectedAgent.temperature * 100}%` }} />
-                    </div>
-                    <div className="inspector-value">{selectedAgent.temperature.toFixed(1)}</div>
+                  <div className="rounded-xl border border-separator-border p-3">
+                    <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">温度</div>
+                    <div className="mt-1 font-mono text-caption-1-medium text-text-primary">{selectedAgent.temperature.toFixed(1)}</div>
                   </div>
-                  <div className="inspector-section">
-                    <span className="inspector-label">挂载插件 · 点击切换</span>
-                    <div className="inspector-plugin-grid">
-                      {data.plugins.map((plugin) => {
-                        const active = selectedAgent.plugins.includes(plugin.id)
-                        return (
-                          <button
-                            key={plugin.id}
-                            className={`inspector-plugin ${active ? 'active' : ''}`}
-                            style={{ '--plugin-color': plugin.color } as CSSProperties}
-                            onClick={() => void togglePlugin(plugin.id)}
-                            disabled={pluginBusy === plugin.id}
-                            title={plugin.description}
-                          >
-                            <PluginIcon name={plugin.icon} size={13} />
-                            <span>{plugin.name}</span>
-                            {active && <span className="inspector-plugin-check">✓</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
+                </div>
+
+                <div className="mt-5">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-caption-1-semibold text-text-secondary">挂载插件</span>
+                    <span className="text-caption-2-regular text-text-tertiary">{selectedAgent.plugins.length}/{data.plugins.length}</span>
                   </div>
-                  <div className="inspector-section">
-                    <span className="inspector-label">System Prompt 摘要</span>
-                    <p className="inspector-prompt">{selectedAgent.systemPrompt}</p>
+                  <div className="flex flex-col gap-1.5">
+                    {data.plugins.map((plugin) => {
+                      const active = selectedAgent.plugins.includes(plugin.id)
+                      return (
+                        <div key={plugin.id} className="flex items-center gap-2.5 rounded-xl border border-separator-border px-2.5 py-2">
+                          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-background-tertiary-default text-accent-600">
+                            <PluginIcon name={plugin.icon} size={14} />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-caption-1-medium text-text-primary">{plugin.name}</span>
+                          <Switch
+                            aria-label={`${active ? '卸下' : '挂载'} ${plugin.name}`}
+                            size="sm"
+                            isSelected={active}
+                            isDisabled={pluginBusy === plugin.id}
+                            onChange={() => void togglePlugin(plugin.id)}
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
-                </>
-              ) : (
-                <div className="inspector-empty">
-                  <Sparkles size={18} />
-                  <p>
-                    {selectedNode.type === 'input'
-                      ? '研究任务的入口节点，不可删除。'
-                      : '可交付成果的出口节点，不可删除。'}
+                </div>
+
+                <div className="mt-5 border-t border-separator-border pt-4">
+                  <div className="text-caption-1-semibold text-text-secondary">System Prompt</div>
+                  <p className="mt-1.5 line-clamp-5 text-caption-1-regular leading-relaxed text-text-tertiary">
+                    {selectedAgent.systemPrompt}
                   </p>
                 </div>
-              )}
-
-              <div className="inspector-section">
-                <span className="inspector-label">连线 · {relatedEdges.length}</span>
-                <div className="inspector-links">
-                  {relatedEdges.map((edge) => (
-                    <div className={`inspector-link ${edge.kind === 'loop' ? 'loop' : ''}`} key={edge.id}>
-                      <span className="inspector-link-nodes">
-                        <span>{nodeLabel(edge.source)}</span>
-                        <ArrowRight size={10} />
-                        <span>{nodeLabel(edge.target)}</span>
-                      </span>
-                      {edge.kind === 'loop' && <em>回环</em>}
-                      <button
-                        className="inspector-unlink"
-                        onClick={() => void removeEdges([edge.id])}
-                        title="删除这条连线"
-                        aria-label="删除这条连线"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))}
-                  {relatedEdges.length === 0 && <p className="inspector-link-hint">这个节点还没有连线。</p>}
-                </div>
-                <p className="inspector-link-hint">从节点右侧圆点拖到另一个节点左侧即可连线；形成环路会被拦截。</p>
+              </>
+            ) : (
+              <div className="mt-5 flex gap-2 rounded-2xl bg-background-secondary-default p-3 text-caption-1-regular leading-relaxed text-text-secondary">
+                <RiSparklingLine className="mt-0.5 size-4 shrink-0 text-accent-600" aria-hidden />
+                {selectedNode.type === 'input' ? '研究任务的入口节点，不可删除。' : '可交付成果的出口节点，不可删除。'}
               </div>
+            )}
 
+            <div className="mt-5 border-t border-separator-border pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-caption-1-semibold text-text-secondary">连线</span>
+                <span className="text-caption-2-regular text-text-tertiary">{relatedEdges.length}</span>
+              </div>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {relatedEdges.map((edge) => (
+                  <div
+                    key={edge.id}
+                    className={cx(
+                      'flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-caption-1-regular',
+                      edge.kind === 'loop' ? 'border-accent-200 bg-accent-50' : 'border-separator-border',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-text-secondary">{nodeLabel(edge.source)}</span>
+                    <RiArrowRightLine className="size-3.5 shrink-0 text-accent-600" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-text-secondary">{nodeLabel(edge.target)}</span>
+                    {edge.kind === 'loop' && <span className="shrink-0 text-caption-2-semibold text-accent-700">回环</span>}
+                    <TooltipTrigger>
+                      <IconButton
+                        icon={RiCloseLine}
+                        size="small"
+                        aria-label="删除这条连线"
+                        onClick={() => void removeEdges([edge.id])}
+                        className="size-6 border-transparent bg-transparent text-text-tertiary shadow-none hover:text-status-rose-text"
+                      />
+                      <Tooltip>删除连线</Tooltip>
+                    </TooltipTrigger>
+                  </div>
+                ))}
+                {relatedEdges.length === 0 && <p className="text-caption-2-regular text-text-tertiary">这个节点还没有连线。</p>}
+              </div>
+              <p className="mt-2 text-caption-2-regular leading-relaxed text-text-tertiary">
+                从节点右侧圆点拖到另一个节点左侧即可连线；形成环路会被拦截。
+              </p>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-2">
               {selectedAgent && (
-                <button className="btn btn-ghost full" onClick={() => navigate('/team')}>
-                  在团队中编辑 <ArrowRight size={14} />
-                </button>
+                <Button variant="secondary" trailingIcon={RiArrowRightLine} onClick={() => navigate('/team')}>
+                  在团队中编辑
+                </Button>
               )}
               {selectedNode.type !== 'input' && selectedNode.type !== 'output' && (
-                <button
-                  className="btn btn-ghost full inspector-delete"
+                <Button
+                  variant="ghost"
+                  leadingIcon={RiDeleteBin6Line}
                   onClick={() => void removeNodes([selectedNode.id])}
+                  className="text-status-rose-text hover:bg-status-rose-background"
                 >
-                  <Trash2 size={14} /> 从画布移除节点
-                </button>
+                  从画布移除节点
+                </Button>
               )}
-            </>
-          ) : (
-            <div className="inspector-placeholder">
-              <div className="inspector-mark">⌘</div>
-              <h3>选择一个节点</h3>
-              <p>查看角色、模型、挂载插件与提示词。也可以直接点插件卡挂载，或从端口拉线。</p>
-              <div className="inspector-tip">
-                <GitBranch size={14} />
-                <span>试试点击「首席分析师」——它挂载了「发散思考」。</span>
-              </div>
             </div>
-          )}
-        </aside>
+          </Surface>
+        )}
       </div>
 
       <Modal
@@ -691,19 +700,16 @@ export default function WorkflowPage() {
         subtitle={`${stats.agents} 个 Agent 会按当前画布执行；核查未通过时自动回到写作节点。`}
         footer={
           <>
-            <button className="btn btn-ghost" onClick={() => setRunOpen(false)}>取消</button>
-            <button className="btn btn-accent" onClick={start} disabled={starting}>
-              {starting ? '启动中…' : '开始运行'}
-            </button>
+            <Button variant="secondary" onClick={() => setRunOpen(false)}>取消</Button>
+            <Button onClick={() => void start()} disabled={starting}>{starting ? '启动中…' : '开始运行'}</Button>
           </>
         }
       >
-        <label className="field">
-          <span>研究任务</span>
-          <textarea rows={5} value={input} onChange={(event) => setInput(event.target.value)} />
-        </label>
-        <p className="hint">运行会即时开始，执行状态通过 SSE 同步到运行页。</p>
-        {error && <div className="form-error">{error}</div>}
+        <div className="flex flex-col gap-4">
+          <Textarea label="研究任务" rows={5} value={input} onChange={setInput} />
+          <p className="text-caption-1-regular text-text-tertiary">运行会即时开始，执行状态通过 SSE 同步到运行页。</p>
+          {error && <p className="text-caption-1-medium text-status-rose-text">{error}</p>}
+        </div>
       </Modal>
 
       <Modal
@@ -713,113 +719,105 @@ export default function WorkflowPage() {
         subtitle="选择模板并确认插入位置。新 Agent 会接在所选节点之后，原有下游节点整体右移。"
         footer={
           <>
-            <button className="btn btn-ghost" onClick={() => setAddOpen(false)}>取消</button>
-            <button
-              className="btn btn-accent"
+            <Button variant="secondary" onClick={() => setAddOpen(false)}>取消</Button>
+            <Button
               onClick={() => void addSpecialist()}
               disabled={creating || !insertAfter || !draft.name.trim() || !draft.title.trim()}
             >
               {creating ? '正在创建…' : '创建并插入'}
-            </button>
+            </Button>
           </>
         }
       >
-        <div className="specialist-grid">
-          {SPECIALISTS.map((template, index) => (
-            <button
-              key={template.name}
-              className={`specialist-card ${index === templateIndex ? 'active' : ''}`}
-              onClick={() => {
-                setTemplateIndex(index)
-                setDraft(draftFromTemplate(index))
-              }}
-            >
-              <span className="specialist-bar" style={{ background: template.color }} />
-              {index === templateIndex && <span className="specialist-check"><Check size={11} /></span>}
-              <strong>{template.name}</strong>
-              <p>{template.description}</p>
-              <span className="specialist-plugins">
-                {template.plugins.map((pluginId) => {
-                  const plugin = data.plugins.find((item) => item.id === pluginId)
-                  return plugin ? <span key={pluginId}><PluginIcon name={plugin.icon} size={11} /> {plugin.name}</span> : null
-                })}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="field-row add-agent-fields">
-          <label className="field">
-            <span>Agent 名称</span>
-            <input
-              value={draft.name}
-              maxLength={24}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder="例如：风险审查员"
-            />
-          </label>
-          <label className="field">
-            <span>一句话职责</span>
-            <input
-              value={draft.title}
-              maxLength={48}
-              onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-              placeholder="它负责补充哪一类判断"
-            />
-          </label>
-        </div>
-
-        <label className="field">
-          <span>插入位置</span>
-          <select value={insertAfter} onChange={(event) => setInsertAfter(event.target.value)}>
-            {insertionTargets.map((node) => (
-              <option key={node.id} value={node.id}>
-                {node.data.label} 之后{nextNodeOf(node.id) ? ` / ${nextNodeOf(node.id)!.data.label} 之前` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        {insertAnchor && insertBefore && (
-          <div className="insert-preview">
-            <span>{insertAnchor.data.label}</span>
-            <ArrowRight size={12} />
-            <strong>{draft.name.trim() || '新 Agent'}</strong>
-            <ArrowRight size={12} />
-            <span>{insertBefore.data.label}</span>
-          </div>
-        )}
-
-        <div className="draft-plugin-block">
-          <span className="inspector-label">预挂插件</span>
-          <div className="draft-plugins">
-            {data.plugins.map((plugin) => {
-              const active = draft.plugins.includes(plugin.id)
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-2 sm:grid-cols-3">
+            {SPECIALISTS.map((template, index) => {
+              const selected = index === templateIndex
               return (
-                <button
-                  key={plugin.id}
-                  className={`draft-plugin ${active ? 'active' : ''}`}
-                  style={{ '--plugin-color': plugin.color } as CSSProperties}
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      plugins: active
-                        ? draft.plugins.filter((id) => id !== plugin.id)
-                        : [...draft.plugins, plugin.id],
-                    })
-                  }
+                <Button
+                  key={template.name}
+                  variant={selected ? 'secondary' : 'ghost'}
+                  onClick={() => {
+                    setTemplateIndex(index)
+                    setDraft(draftFromTemplate(index))
+                  }}
+                  className={cx(
+                    'h-auto w-full items-start justify-start whitespace-normal border p-3 text-left',
+                    '[&>span]:w-full [&>span]:flex-col [&>span]:items-start [&>span]:gap-1',
+                    selected ? 'border-accent-300 bg-accent-50' : 'border-separator-border',
+                  )}
+                  trailingIcon={selected ? RiCheckLine : undefined}
                 >
-                  <PluginIcon name={plugin.icon} size={12} />
-                  {plugin.name}
-                  {active && <Check size={10} />}
-                </button>
+                  <span className="text-body-2-medium text-text-primary">{template.name}</span>
+                  <span className="text-caption-2-regular leading-relaxed text-text-secondary">{template.description}</span>
+                </Button>
               )
             })}
           </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Agent 名称" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} placeholder="例如：风险审查员" />
+            <Input label="一句话职责" value={draft.title} onChange={(value) => setDraft({ ...draft, title: value })} placeholder="它负责补充哪一类判断" />
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-caption-1-semibold text-text-secondary">插入位置</span>
+            <select
+              value={insertAfter}
+              onChange={(event) => setInsertAfter(event.target.value)}
+              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-body-regular text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              {insertionTargets.map((node) => (
+                <option key={node.id} value={node.id}>
+                  {node.data.label} 之后{nextNodeOf(node.id) ? ` / ${nextNodeOf(node.id)!.data.label} 之前` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {insertAnchor && insertBefore && (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-accent-200 bg-accent-50 px-3 py-2.5 text-caption-1-regular text-text-secondary">
+              <span>{insertAnchor.data.label}</span>
+              <RiArrowRightSLine className="size-3.5 text-accent-600" aria-hidden />
+              <strong className="font-semibold text-accent-700">{draft.name.trim() || '新 Agent'}</strong>
+              <RiArrowRightSLine className="size-3.5 text-accent-600" aria-hidden />
+              <span>{insertBefore.data.label}</span>
+            </div>
+          )}
+
+          <div>
+            <span className="text-caption-1-semibold text-text-secondary">预挂插件</span>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {data.plugins.map((plugin) => {
+                const active = draft.plugins.includes(plugin.id)
+                const Icon = pluginIconComponent(plugin.icon)
+                return (
+                  <Button
+                    key={plugin.id}
+                    variant={active ? 'secondary' : 'ghost'}
+                    size="xs"
+                    leadingIcon={Icon}
+                    trailingIcon={active ? RiCheckLine : undefined}
+                    className={cx('rounded-full border', active ? 'border-accent-300 text-accent-700' : 'border-separator-border')}
+                    onClick={() =>
+                      setDraft({
+                        ...draft,
+                        plugins: active
+                          ? draft.plugins.filter((id) => id !== plugin.id)
+                          : [...draft.plugins, plugin.id],
+                      })
+                    }
+                  >
+                    {plugin.name}
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
+          <p className="text-caption-1-regular leading-relaxed text-text-tertiary">
+            名称与职责可以改写；其他模型参数沿用模板。新节点会获得唯一 ID，便于在运行轨迹里追踪。
+          </p>
+          {error && <p className="text-caption-1-medium text-status-rose-text">{error}</p>}
         </div>
-        <p className="hint">
-          名称与职责可以改写；其他模型参数沿用模板。新节点会获得唯一 ID，便于在运行轨迹里追踪。
-        </p>
-        {error && <div className="form-error">{error}</div>}
       </Modal>
 
       <Modal
@@ -829,65 +827,61 @@ export default function WorkflowPage() {
         subtitle="这些参数会在下一次运行时生效。"
         footer={
           <>
-            <button className="btn btn-ghost" onClick={() => setSettingsOpen(false)}>取消</button>
-            <button className="btn btn-accent" onClick={saveSettings}>保存设置</button>
+            <Button variant="secondary" onClick={() => setSettingsOpen(false)}>取消</Button>
+            <Button onClick={() => void saveSettings()}>保存设置</Button>
           </>
         }
       >
         {settings && (
-          <div className="settings-grid">
-            <label className="field">
-              <span>最大并发</span>
-              <input
-                type="number"
-                min={1}
-                max={8}
-                value={settings.maxConcurrency}
-                onChange={(event) => setSettings({ ...settings, maxConcurrency: Number(event.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>最大回环次数</span>
-              <input
-                type="number"
-                min={0}
-                max={4}
-                value={settings.maxLoop}
-                onChange={(event) => setSettings({ ...settings, maxLoop: Number(event.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>核查通过阈值</span>
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.05}
-                value={settings.verifyThreshold}
-                onChange={(event) => setSettings({ ...settings, verifyThreshold: Number(event.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>预算上限（USD）</span>
-              <input
-                type="number"
-                min={0}
-                step={0.1}
-                value={settings.budgetUsd}
-                onChange={(event) => setSettings({ ...settings, budgetUsd: Number(event.target.value) })}
-              />
-            </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="最大并发"
+              type="number"
+              value={String(settings.maxConcurrency)}
+              onChange={(value) => setSettings({ ...settings, maxConcurrency: Math.max(1, Math.min(8, Number(value) || 1)) })}
+            />
+            <Input
+              label="最大回环次数"
+              type="number"
+              value={String(settings.maxLoop)}
+              onChange={(value) => setSettings({ ...settings, maxLoop: Math.max(0, Math.min(4, Number(value) || 0)) })}
+            />
+            <Input
+              label="核查通过阈值"
+              type="number"
+              value={String(settings.verifyThreshold)}
+              onChange={(value) => setSettings({ ...settings, verifyThreshold: Math.max(0, Math.min(1, Number(value) || 0)) })}
+            />
+            <Input
+              label="预算上限（USD）"
+              type="number"
+              value={String(settings.budgetUsd)}
+              onChange={(value) => setSettings({ ...settings, budgetUsd: Math.max(0, Number(value) || 0) })}
+            />
           </div>
         )}
       </Modal>
 
       {notice && (
-        <div className={`app-toast ${notice.tone}`} role="status" aria-live="polite">
-          <span className="app-toast-icon">
-            {notice.tone === 'ok' ? <Check size={13} /> : <Info size={13} />}
+        <div
+          className={cx(
+            'fixed bottom-5 end-5 z-[90] flex max-w-[calc(100vw-2rem)] items-start gap-2 rounded-2xl border bg-background-primary-default p-3 text-body-2-regular text-text-primary shadow-xl backdrop-blur-xl',
+            notice.tone === 'warn' ? 'border-status-orange-text/30' : 'border-separator-border',
+          )}
+          role="status"
+          aria-live="polite"
+        >
+          <span className={cx('mt-0.5 shrink-0', notice.tone === 'warn' ? 'text-status-orange-text' : 'text-status-lime-text')}>
+            {notice.tone === 'ok' ? <RiCheckLine className="size-4" /> : <RiErrorWarningLine className="size-4" />}
           </span>
-          <span>{notice.message}</span>
-          <button onClick={() => setNotice(null)} aria-label="关闭提示"><X size={12} /></button>
+          <span className="min-w-0 flex-1 leading-relaxed">{notice.message}</span>
+          <IconButton
+            icon={RiCloseLine}
+            size="small"
+            aria-label="关闭提示"
+            onClick={() => setNotice(null)}
+            className="size-6 border-transparent bg-transparent shadow-none"
+          />
         </div>
       )}
     </div>
