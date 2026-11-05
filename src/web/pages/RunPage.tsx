@@ -1,31 +1,49 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle,
-  ArrowLeft,
-  BadgeCheck,
-  Check,
-  ChevronRight,
-  Copy,
-  Download,
-  FileText,
-  GitBranch,
-  Loader2,
-  Pause,
-  RotateCcw,
-  ShieldCheck,
-  Sparkles,
-  Terminal,
-  WifiOff,
-  X,
-} from 'lucide-react'
+  RiArrowLeftLine,
+  RiArrowRightLine,
+  RiArrowRightSLine,
+  RiCheckLine,
+  RiCloseLine,
+  RiFileCopyLine,
+  RiDownloadLine,
+  RiErrorWarningLine,
+  RiFileTextLine,
+  RiGitBranchLine,
+  RiPauseLine,
+  RiRefreshLine,
+  RiShieldCheckLine,
+  RiSignalWifiOffLine,
+  RiSparklingLine,
+  RiTerminalBoxLine,
+  RiTimerLine,
+  RiVerifiedBadgeLine,
+} from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
 import type { Citation, NodeRun, RunEvent } from '../../shared/types'
-import { MarkdownView, Modal, Pill, ScoreRing, StatusPill } from '../components/ui'
+import { Badge } from '@/components/base/badges/badge'
+import { Button, ButtonLink } from '@/components/base/buttons/button'
+import { Spinner } from '@/components/base/spinner/spinner'
+import { PillTab, PillTabList } from '@/components/base/tabs/pill-tab'
+import { cx } from '@/utils/cx'
+import { MarkdownView, Modal, ScoreRing, StatusPill, Surface } from '../components/ui'
 import { WorkflowGraph, type NodeStatusInfo } from '../components/Graph'
 
 type Tab = 'graph' | 'report' | 'ledger' | 'verify' | 'events'
+
+const TABS: Array<{
+  key: Tab
+  label: string
+  icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
+}> = [
+  { key: 'graph', label: '执行图谱', icon: RiGitBranchLine },
+  { key: 'report', label: '研究报告', icon: RiFileTextLine },
+  { key: 'ledger', label: '证据账本', icon: RiVerifiedBadgeLine },
+  { key: 'verify', label: '核查与回环', icon: RiShieldCheckLine },
+  { key: 'events', label: '事件流', icon: RiTerminalBoxLine },
+]
 
 function formatTime(value?: string) {
   if (!value) return '--:--:--'
@@ -261,8 +279,8 @@ export default function RunPage() {
 
   if (!data || !detail) {
     return (
-      <div className="page run-loading">
-        <Loader2 className="spin" size={22} />
+      <div className="flex min-h-[60dvh] items-center justify-center gap-3 text-body-regular text-text-secondary">
+        <Spinner size="sm" aria-label="正在装载运行轨迹" />
         <span>正在装载运行轨迹…</span>
       </div>
     )
@@ -297,452 +315,507 @@ export default function RunPage() {
     }
   }
 
+  const tabCount: Record<Tab, number | undefined> = {
+    graph: detail.nodes.length,
+    report: undefined,
+    ledger: verdict?.claims?.length,
+    verify: verifierRuns.length > 1 ? verifierRuns.length : undefined,
+    events: events.length,
+  }
+
   return (
-    <div className="page run-page">
-      <div className="run-head">
-        <div className="run-head-left">
-          <button className="back-btn" onClick={() => navigate('/')}>
-            <ArrowLeft size={15} /> 返回总览
-          </button>
-          <div className="run-title-row">
-            <div>
-              <div className="eyebrow">RUN · {detail.run.id}</div>
-              <h1>{data.workflow.name}</h1>
-            </div>
+    <div className="app-page">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Button variant="ghost" size="small" leadingIcon={RiArrowLeftLine} onClick={() => navigate('/')}>
+          返回总览
+        </Button>
+        <div className="hidden items-center gap-2 text-caption-1-regular text-text-tertiary sm:flex">
+          <RiTimerLine className="size-3.5" aria-hidden />
+          启动于 {formatTime(detail.run.startedAt)} · {detail.run.mode === 'live' ? 'Live 模型' : 'Mock 演示'}
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Run · {detail.run.id}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h1 className="text-title-1-medium text-text-primary sm:text-display-4-medium">{data.workflow.name}</h1>
             <StatusPill status={detail.run.status} />
           </div>
-          <p className="run-sub">
-            {detail.run.mode === 'live' ? 'Live 模型' : 'Mock 演示'} · 启动于 {formatTime(detail.run.startedAt)}
+          <p className="mt-1 text-caption-1-regular text-text-tertiary">
+            {detail.run.mode === 'live' ? 'Live 模型' : 'Mock 演示'} ·{' '}
+            {running ? '执行中' : detail.run.finishedAt ? `完成于 ${formatTime(detail.run.finishedAt)}` : '等待运行'}
           </p>
-          <p className="run-request">“{detail.run.input}”</p>
+          <p className="mt-2 line-clamp-2 max-w-3xl text-body-2-regular leading-relaxed text-text-secondary">“{detail.run.input}”</p>
         </div>
-        <div className="run-head-right">
-          <div className="run-metrics">
-            <div className="run-metric">
-              <span>核查分</span>
-              <strong>{detail.run.score !== undefined ? Math.round(detail.run.score * 100) : '—'}<em>{detail.run.score !== undefined ? '%' : ''}</em></strong>
+        <div className="flex flex-col gap-4 rounded-3xl border border-separator-border bg-background-primary-default p-4 shadow-card backdrop-blur-xl xl:w-[370px]">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">核查分</div>
+              <div className="mt-1 text-title-2-semibold text-text-primary">
+                {detail.run.score !== undefined ? `${Math.round(detail.run.score * 100)}%` : '—'}
+              </div>
             </div>
-            <div className="run-metric">
-              <span>耗时</span>
-              <strong>{elapsed}</strong>
+            <div>
+              <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">耗时</div>
+              <div className="mt-1 text-title-2-semibold text-text-primary">{elapsed}</div>
             </div>
-            <div className="run-metric">
-              <span>Tokens</span>
-              <strong>{detail.run.tokens.toLocaleString()}</strong>
+            <div>
+              <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">Tokens</div>
+              <div className="mt-1 text-title-2-semibold text-text-primary">{detail.run.tokens.toLocaleString()}</div>
             </div>
           </div>
-          <div className="run-actions">
+          <div className="flex flex-wrap gap-2 border-t border-separator-border pt-3">
             {running ? (
-              <button className="btn btn-ghost" onClick={cancel} disabled={cancelling}>
-                <Pause size={14} /> {cancelling ? '取消中…' : '取消'}
-              </button>
+              <Button variant="secondary" leadingIcon={RiPauseLine} onClick={() => void cancel()} disabled={cancelling}>
+                {cancelling ? '取消中…' : '取消'}
+              </Button>
             ) : (
-              <button className="btn btn-ghost" onClick={() => navigate('/workflow')}><RotateCcw size={14} /> 再运行</button>
+              <Button variant="secondary" leadingIcon={RiRefreshLine} onClick={() => navigate('/workflow')}>
+                再运行
+              </Button>
             )}
-            <a className="btn btn-dark" href={api.reportUrl(detail.run.id)} download>
-              <Download size={14} /> 导出报告
-            </a>
+            <ButtonLink
+              href={api.reportUrl(detail.run.id)}
+              download
+              variant="ghost"
+              leadingIcon={RiDownloadLine}
+              className="ms-auto"
+            >
+              导出报告
+            </ButtonLink>
           </div>
         </div>
       </div>
 
       {detail.run.error && (
-        <div className="run-alert">
-          <AlertTriangle size={16} />
-          <span>{detail.run.error}</span>
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-status-rose-text/30 bg-status-rose-background px-4 py-3 text-body-2-regular text-status-rose-text">
+          <RiErrorWarningLine className="size-4 shrink-0" aria-hidden />
+          {detail.run.error}
         </div>
       )}
 
       {running && (
-        <div className="run-live-strip" aria-live="polite">
-          <div className="run-live-copy">
-            <span className={`live-state ${liveState}`}>
-              <i />
-              {liveState === 'reconnecting' ? 'RECONNECTING' : liveState === 'connecting' ? 'CONNECTING' : 'LIVE'}
+        <div className="mt-4 rounded-2xl border border-accent-200 bg-accent-50 px-4 py-3" aria-live="polite">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption-1-regular text-text-secondary">
+            <span className={cx('inline-flex items-center gap-1.5 font-mono text-caption-2-semibold uppercase tracking-[0.08em]', liveState === 'reconnecting' ? 'text-status-orange-text' : 'text-accent-700')}>
+              {liveState === 'reconnecting' ? <RiSignalWifiOffLine className="size-3.5" /> : <span className="size-1.5 rounded-full bg-current" />}
+              {liveState === 'reconnecting' ? '重连中' : liveState === 'connecting' ? '连接中' : 'Live'}
             </span>
             <span>
               {activeRuns.length > 0
                 ? `${activeRuns.map((nodeRun) => nodeRun!.title).join('、')} 执行中`
                 : '调度器正在选择下一批节点'}
             </span>
-            <span className="run-live-count">已完成 {completedCount} / {workflowNodes.length}</span>
-            <strong>{progress}%</strong>
+            <span className="text-text-tertiary">已完成 {completedCount} / {workflowNodes.length}</span>
+            <strong className="ms-auto font-mono text-caption-1-semibold text-accent-700">{progress}%</strong>
           </div>
-          <div className="run-progress"><span style={{ width: `${progress}%` }} /></div>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-accent-100">
+            <div className="h-full rounded-full bg-accent-500 transition-[width] duration-500" style={{ width: `${progress}%` }} />
+          </div>
         </div>
       )}
 
-      <div className="run-tabs" role="tablist" aria-label="运行视图">
-        <button role="tab" aria-selected={tab === 'graph'} className={tab === 'graph' ? 'active' : ''} onClick={() => selectTab('graph')}>
-          <GitBranch size={14} /> 执行图谱 <span>{detail.nodes.length}</span>
-        </button>
-        <button role="tab" aria-selected={tab === 'report'} className={tab === 'report' ? 'active' : ''} onClick={() => selectTab('report')}>
-          <FileText size={14} /> 研究报告
-        </button>
-        <button role="tab" aria-selected={tab === 'ledger'} className={tab === 'ledger' ? 'active' : ''} onClick={() => selectTab('ledger')}>
-          <BadgeCheck size={14} /> 证据账本
-          {verdict?.claims?.length ? <span>{verdict.claims.length}</span> : null}
-        </button>
-        <button role="tab" aria-selected={tab === 'verify'} className={tab === 'verify' ? 'active' : ''} onClick={() => selectTab('verify')}>
-          <ShieldCheck size={14} /> 核查与回环
-          {verifierRuns.length > 1 && <span className="tab-badge">{verifierRuns.length}</span>}
-        </button>
-        <button role="tab" aria-selected={tab === 'events'} className={tab === 'events' ? 'active' : ''} onClick={() => selectTab('events')}>
-          <Terminal size={14} /> 事件流 <span>{events.length}</span>
-        </button>
-        <div className="run-tabs-right">
+      {loadError && (
+        <div className="mt-4 flex items-center gap-2 rounded-2xl bg-background-secondary-default px-4 py-2.5 text-caption-1-regular text-text-secondary">
+          <RiSignalWifiOffLine className="size-3.5" aria-hidden /> {loadError}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="max-w-full overflow-x-auto">
+          <PillTabList className="rounded-2xl border border-separator-border bg-background-tertiary-default p-1">
+            {TABS.map((item) => (
+              <PillTab
+                key={item.key}
+                variant="blue"
+                icon={item.icon}
+                isSelected={tab === item.key}
+                onSelect={() => selectTab(item.key)}
+              >
+                {item.label}
+                {tabCount[item.key] !== undefined && (
+                  <span className="ms-1 font-mono text-caption-2-medium opacity-70">{tabCount[item.key]}</span>
+                )}
+              </PillTab>
+            ))}
+          </PillTabList>
+        </div>
+        <div className="ms-auto hidden items-center gap-2 sm:flex">
           {running && (
-            <span className={`live-indicator ${liveState}`}>
-              {liveState === 'reconnecting' ? <WifiOff size={11} /> : <i />}
-              {liveState === 'reconnecting' ? '重连中' : 'LIVE'}
+            <span className={cx('inline-flex items-center gap-1.5 text-caption-2-semibold uppercase tracking-[0.08em]', liveState === 'reconnecting' ? 'text-status-orange-text' : 'text-status-lime-text')}>
+              <span className="size-1.5 rounded-full bg-current" />
+              {liveState === 'reconnecting' ? '重连中' : 'Live'}
             </span>
           )}
-          {detail.run.mode === 'mock' && <Pill tone="amber">MOCK</Pill>}
+          <Badge color="neutral">{detail.run.mode === 'mock' ? 'Mock' : 'Live'}</Badge>
         </div>
       </div>
 
       {tab === 'graph' && (
-        <div className="run-graph-layout">
-          <div className="run-graph-main">
-            <div className="panel run-canvas-panel">
-              <WorkflowGraph
-                graph={data.workflow.graph}
-                agents={data.agents}
-                plugins={data.plugins}
-                statuses={statuses}
-                readOnly
-                height={460}
-                onNodeClick={(nodeId) => {
-                  if (latest.has(nodeId)) setSelectedNodeId(nodeId)
-                }}
-              />
-            </div>
-            <div className="panel node-timeline">
-              <div className="panel-head compact">
+        <div className="mt-4 flex flex-col gap-4">
+          <Surface className="overflow-hidden p-0">
+            <WorkflowGraph
+              graph={data.workflow.graph}
+              agents={data.agents}
+              plugins={data.plugins}
+              statuses={statuses}
+              readOnly
+              height={470}
+              onNodeClick={(nodeId) => {
+                if (latest.has(nodeId)) setSelectedNodeId(nodeId)
+              }}
+            />
+          </Surface>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+            <Surface className="p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="eyebrow">EXECUTION TRACE</div>
-                  <h2>节点轨迹</h2>
+                  <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Execution trace</div>
+                  <h2 className="mt-1.5 text-title-3-semibold text-text-primary">节点轨迹</h2>
                 </div>
-                <span className="hint">
+                <span className="text-caption-1-regular text-text-tertiary">
                   {running ? `${completedCount}/${workflowNodes.length} 完成 · 点击节点看实时输出` : '点击节点查看输出与证据'}
                 </span>
               </div>
-              <div className="timeline-list">
+              <div className="mt-3 flex flex-col">
                 {workflowNodes.map((node) => {
                   const nodeRun = latest.get(node.id)
                   const status = nodeRun?.status ?? 'pending'
                   return (
                     <button
-                      className={`timeline-row ${status}`}
                       key={node.id}
                       onClick={() => nodeRun && setSelectedNodeId(node.id)}
+                      className={cx(
+                        'grid w-full grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border-b border-separator-border px-2 py-2.5 text-left last:border-0',
+                        'transition-colors duration-150 hover:bg-background-secondary-default',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring',
+                        'sm:grid-cols-[8px_minmax(0,1fr)_auto_48px_54px_54px]',
+                        status === 'running' && 'bg-accent-50',
+                      )}
                     >
-                      <span className={`timeline-dot ${status}`} />
-                      <span className="timeline-name">
-                        <strong>{node.data.label}</strong>
-                        <small>{node.data.subtitle}</small>
+                      <span className={cx('size-1.5 rounded-full', status === 'running' ? 'animate-pulse bg-accent-500' : status === 'completed' ? 'bg-status-lime-text' : status === 'failed' ? 'bg-status-rose-text' : 'bg-text-tertiary')} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-body-2-medium text-text-primary">{node.data.label}</span>
+                        <span className="block truncate text-caption-1-regular text-text-tertiary">{node.data.subtitle}</span>
                       </span>
-                      <span className="timeline-iter">
-                        {nodeRun && nodeRun.iteration > 0 ? `L${nodeRun.iteration + 1}` : ''}
-                      </span>
-                      <span className="timeline-score">
-                        {nodeRun?.score !== undefined ? `${Math.round(nodeRun.score * 100)}%` : ''}
-                      </span>
-                      <span className="timeline-tokens">{nodeRun ? `${nodeRun.tokens} tok` : ''}</span>
-                      <StatusPill status={status} />
+                      <span className="font-mono text-caption-2-medium text-accent-600">{nodeRun && nodeRun.iteration > 0 ? `L${nodeRun.iteration + 1}` : ''}</span>
+                      <span className="hidden font-mono text-caption-1-regular text-status-lime-text sm:block">{nodeRun?.score !== undefined ? `${Math.round(nodeRun.score * 100)}%` : ''}</span>
+                      <span className="hidden font-mono text-caption-1-regular text-text-tertiary sm:block">{nodeRun ? `${nodeRun.tokens} tok` : ''}</span>
+                      <span className="hidden sm:block"><StatusPill status={status} /></span>
                     </button>
                   )
                 })}
               </div>
-            </div>
-          </div>
-          <aside className="panel event-feed-panel">
-            <div className="panel-head compact">
-              <div>
-                <div className="eyebrow">LIVE FEED</div>
-                <h2>调度事件</h2>
-              </div>
-              <span className={`feed-status ${running ? liveState : 'closed'}`}>
-                <i /> {running ? (liveState === 'reconnecting' ? '重连中' : 'LIVE') : '已归档'}
-              </span>
-            </div>
-            {loadError && <div className="feed-warning"><WifiOff size={12} /> {loadError}</div>}
-            <div
-              className="event-feed"
-              ref={feedRef}
-              onScroll={(event) => {
-                const target = event.currentTarget
-                stickToBottom.current = target.scrollHeight - target.scrollTop - target.clientHeight < 36
-              }}
-            >
-              {events.map((event) => (
-                <div className={`feed-item feed-${event.type.replace(/\./g, '-')}`} key={event.seq}>
-                  <span className="feed-time">{formatTime(event.ts)}</span>
-                  <span className="feed-dot" />
-                  <span className="feed-text">{event.message ?? event.type}</span>
+            </Surface>
+
+            <Surface className="flex min-h-[300px] flex-col p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Live feed</div>
+                  <h2 className="mt-1.5 text-title-3-semibold text-text-primary">调度事件</h2>
                 </div>
-              ))}
-              {events.length === 0 && <div className="feed-empty">等待第一条调度事件…</div>}
-              {running && <div className="feed-empty feed-live-tail">正在接收下一个调度事件…</div>}
-            </div>
-          </aside>
+                <span className={cx('inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-caption-2-semibold', running ? 'bg-accent-100 text-accent-700' : 'bg-background-tertiary-default text-text-tertiary')}>
+                  <span className={cx('size-1.5 rounded-full bg-current', running && 'animate-pulse')} />
+                  {running ? (liveState === 'reconnecting' ? '重连中' : 'Live') : '已归档'}
+                </span>
+              </div>
+              {loadError && <div className="mt-2 flex items-center gap-1.5 text-caption-1-regular text-status-orange-text"><RiSignalWifiOffLine className="size-3.5" /> {loadError}</div>}
+              <div
+                ref={feedRef}
+                className="mt-3 max-h-[420px] flex-1 overflow-y-auto pe-1"
+                onScroll={(event) => {
+                  const target = event.currentTarget
+                  stickToBottom.current = target.scrollHeight - target.scrollTop - target.clientHeight < 36
+                }}
+              >
+                {events.map((event) => (
+                  <div key={event.seq} className="grid grid-cols-[48px_5px_minmax(0,1fr)] items-start gap-2 border-b border-separator-border/70 py-1.5 last:border-0">
+                    <span className="font-mono text-caption-2-regular text-text-tertiary">{formatTime(event.ts)}</span>
+                    <span className={cx('mt-1.5 size-1 rounded-full', event.type.includes('failed') || event.type.includes('loop') ? 'bg-accent-500' : 'bg-text-tertiary')} />
+                    <span className={cx('text-caption-1-regular leading-relaxed', event.type.includes('failed') ? 'text-status-rose-text' : 'text-text-secondary')}>
+                      {event.message ?? event.type}
+                    </span>
+                  </div>
+                ))}
+                {events.length === 0 && <div className="py-5 text-caption-1-regular text-text-tertiary">等待第一条调度事件…</div>}
+                {running && <div className="py-2 font-mono text-caption-2-regular text-text-tertiary">正在接收下一个调度事件…</div>}
+              </div>
+            </Surface>
+          </div>
         </div>
       )}
 
       {tab === 'report' && (
-        <div className="report-layout">
-          <div className="panel report-panel">
-            <div className="report-toolbar">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Surface className="overflow-hidden p-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-separator-border px-5 py-4">
               <div>
-                <div className="eyebrow">DELIVERABLE</div>
-                <strong>{data.project.name} · 投资研究报告</strong>
+                <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Deliverable</div>
+                <div className="mt-1 text-title-3-semibold text-text-primary">{data.project.name} · 投资研究报告</div>
               </div>
-              <div className="report-toolbar-actions">
-                <button className="btn btn-ghost sm" onClick={copyReport}>
-                  {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? '已复制' : '复制 Markdown'}
-                </button>
-                <a className="btn btn-ghost sm" href={api.reportUrl(detail.run.id)} download>
-                  <Download size={14} /> 下载
-                </a>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="small" leadingIcon={copied ? RiCheckLine : RiFileCopyLine} onClick={() => void copyReport()}>
+                  {copied ? '已复制' : '复制 Markdown'}
+                </Button>
+                <ButtonLink href={api.reportUrl(detail.run.id)} download size="small" variant="ghost" leadingIcon={RiDownloadLine}>
+                  下载
+                </ButtonLink>
               </div>
             </div>
             {markdown ? (
-              <MarkdownView content={markdown} citations={citations} />
+              <div className="mx-auto max-w-3xl px-5 py-6 sm:px-8">
+                <MarkdownView content={markdown} citations={citations} />
+              </div>
             ) : (
-              <div className="report-pending">
-                <Loader2 className="spin" size={20} />
+              <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-body-regular text-text-secondary">
+                <Spinner size="sm" aria-label="报告生成中" />
                 <span>{running ? '报告正在生成…' : '还没有生成报告。'}</span>
               </div>
             )}
-          </div>
-          <aside className="panel evidence-panel">
-            <div className="panel-head compact">
+          </Surface>
+          <Surface className="h-fit p-5 xl:sticky xl:top-24">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="eyebrow">EVIDENCE</div>
-                <h2>引用证据</h2>
+                <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Evidence</div>
+                <h2 className="mt-1 text-title-3-semibold text-text-primary">引用证据</h2>
               </div>
-              <Pill tone="teal">{citations.length}</Pill>
+              <Badge color="neutral">{citations.length}</Badge>
             </div>
-            <div className="evidence-list">
+            <div className="mt-4 flex flex-col gap-2.5">
               {citations.map((citation) => (
-                <div className="evidence-item" key={citation.id}>
-                  <div className="evidence-head">
-                    <span className="evidence-ref">[{citation.id}]</span>
-                    <strong>{citation.docTitle}</strong>
+                <div key={citation.id} className="rounded-2xl border border-separator-border bg-background-secondary-default p-3">
+                  <div className="flex items-start gap-2">
+                    <span className="shrink-0 font-mono text-caption-2-semibold text-accent-600">[{citation.id}]</span>
+                    <span className="text-caption-1-medium leading-relaxed text-text-primary">{citation.docTitle}</span>
                   </div>
-                  <p>{citation.quote.slice(0, 150)}…</p>
+                  <p className="mt-1.5 line-clamp-3 text-caption-1-regular leading-relaxed text-text-tertiary">{citation.quote}</p>
                 </div>
               ))}
-              {citations.length === 0 && <div className="hint">报告完成后，这里会列出全部证据。</div>}
+              {citations.length === 0 && <p className="text-caption-1-regular text-text-tertiary">报告完成后，这里会列出全部证据。</p>}
             </div>
-          </aside>
+          </Surface>
         </div>
       )}
 
       {tab === 'ledger' && (
-        <div className="ledger-layout">
-          <div className="panel ledger-panel">
-            <div className="ledger-head">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <Surface className="overflow-hidden p-0">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-separator-border px-5 py-5">
               <div>
-                <div className="eyebrow">CLAIM LEDGER</div>
-                <h2>证据账本</h2>
-                <p>每一条主张都能回到证据、核查结论与路由目标。</p>
+                <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Claim ledger</div>
+                <h2 className="mt-1.5 text-title-2-semibold text-text-primary">证据账本</h2>
+                <p className="mt-1 text-caption-1-regular text-text-secondary">每一条主张都能回到证据、核查结论与路由目标。</p>
               </div>
-              <div className="ledger-summary">
-                <div><strong>{ledgerClaims.length}</strong><span>条主张</span></div>
-                <div><strong className="ok-text">{supportedClaims}</strong><span>被支持</span></div>
-                <div><strong className="bad-text">{ledgerClaims.length - supportedClaims}</strong><span>待修正</span></div>
+              <div className="flex gap-5 text-end">
+                <div><div className="text-title-3-semibold text-text-primary">{ledgerClaims.length}</div><div className="text-caption-2-regular text-text-tertiary">条主张</div></div>
+                <div><div className="text-title-3-semibold text-status-lime-text">{supportedClaims}</div><div className="text-caption-2-regular text-text-tertiary">被支持</div></div>
+                <div><div className="text-title-3-semibold text-status-rose-text">{ledgerClaims.length - supportedClaims}</div><div className="text-caption-2-regular text-text-tertiary">待修正</div></div>
               </div>
             </div>
-            <div className="ledger-list">
+            <div className="p-2 sm:p-3">
               {ledgerClaims.map((claim, index) => {
                 const citation = claim.citation ? citations.find((item) => item.id === claim.citation) : undefined
                 return (
                   <button
-                    className={`ledger-item ${claim.supported ? 'ok' : 'bad'} ${index === selectedClaim ? 'selected' : ''}`}
                     key={index}
                     onClick={() => setSelectedClaim(index)}
+                    className={cx(
+                      'grid w-full grid-cols-[28px_minmax(0,1fr)_18px] items-start gap-3 rounded-2xl border-b border-separator-border px-3 py-3.5 text-left last:border-0',
+                      'transition-colors duration-150 hover:bg-background-secondary-default',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring',
+                      index === selectedClaim && 'bg-accent-50',
+                    )}
                   >
-                    <span className="ledger-index">{String(index + 1).padStart(2, '0')}</span>
-                    <span className="ledger-item-main">
-                      <p>{claim.claim}</p>
-                      <span className="ledger-item-meta">
-                        <span className={`ledger-status ${claim.supported ? 'ok' : 'bad'}`}>
+                    <span className="font-mono text-caption-2-medium text-text-tertiary">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="min-w-0">
+                      <span className="line-clamp-2 text-body-2-medium leading-relaxed text-text-primary">{claim.claim}</span>
+                      <span className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <span className={cx('rounded-full px-2 py-0.5 text-caption-2-semibold', claim.supported ? 'bg-status-lime-background text-status-lime-text' : 'bg-status-rose-background text-status-rose-text')}>
                           {claim.supported ? '支持' : '不支持'}
                         </span>
-                        {claim.citation && <span className="ledger-cite">[{claim.citation}]</span>}
+                        {citation && <span className="font-mono text-caption-2-regular text-accent-600">[{citation.id}]</span>}
                       </span>
                     </span>
-                    <ChevronRight size={14} className="ledger-chevron" />
+                    <RiArrowRightSLine className={cx('mt-0.5 size-4 text-text-tertiary transition-opacity', index === selectedClaim ? 'opacity-100' : 'opacity-0')} aria-hidden />
                   </button>
                 )
               })}
               {ledgerClaims.length === 0 && (
-                <div className="ledger-empty">
-                  <BadgeCheck size={18} />
-                  <span>报告生成后，这里会出现逐条主张与证据。</span>
+                <div className="flex flex-col items-center gap-2 px-4 py-14 text-center text-body-2-regular text-text-secondary">
+                  <RiVerifiedBadgeLine className="size-5 text-accent-600" />
+                  报告生成后，这里会出现逐条主张与证据。
                 </div>
               )}
             </div>
-          </div>
-          <aside className="panel ledger-side ledger-detail">
-            <ScoreRing score={verdict?.score ?? detail.run.score ?? 0} size={100} />
-            <h3>{verdict?.passed ? '账本已对齐' : '账本存在缺口'}</h3>
-            <p>核查器逐条比对主张与证据；不通过的意见会按类型路由回上游节点。</p>
+          </Surface>
+
+          <Surface className="h-fit p-5 xl:sticky xl:top-24">
+            <ScoreRing score={verdict?.score ?? detail.run.score ?? 0} size={104} />
+            <h3 className="mt-3 text-center text-title-3-semibold text-text-primary">{verdict?.passed ? '账本已对齐' : '账本存在缺口'}</h3>
+            <p className="mt-1 text-center text-caption-1-regular leading-relaxed text-text-secondary">
+              核查器逐条比对主张与证据；不通过的意见会按类型路由回上游节点。
+            </p>
             {activeClaim && (
               <>
-                <div className="ledger-detail-block">
-                  <span className="ledger-detail-label">主张 / CLAIM</span>
-                  <p className="ledger-detail-claim">{activeClaim.claim}</p>
-                  <div className="ledger-detail-reason">{activeClaim.reason}</div>
+                <div className="mt-4 border-t border-separator-border pt-4">
+                  <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">主张 / claim</div>
+                  <p className="mt-1.5 text-body-2-medium leading-relaxed text-text-primary">{activeClaim.claim}</p>
+                  <p className="mt-1.5 text-caption-1-regular leading-relaxed text-text-tertiary">{activeClaim.reason}</p>
                 </div>
-                <div className="ledger-detail-block">
-                  <span className="ledger-detail-label">证据 / EVIDENCE</span>
+                <div className="mt-4 border-t border-separator-border pt-4">
+                  <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">证据 / evidence</div>
                   {activeCitation ? (
-                    <div className="ledger-detail-quote">
-                      <strong>{activeCitation.docTitle}</strong>
-                      {activeCitation.quote}
+                    <div className="mt-2 rounded-2xl border-s-2 border-accent-500 bg-accent-50 p-3">
+                      <div className="text-caption-1-semibold text-text-primary">{activeCitation.docTitle}</div>
+                      <p className="mt-1 text-caption-1-regular leading-relaxed text-text-secondary">{activeCitation.quote}</p>
                     </div>
                   ) : (
-                    <p className="hint">没有找到对应证据。</p>
+                    <p className="mt-2 text-caption-1-regular text-text-tertiary">没有找到对应证据。</p>
                   )}
                 </div>
                 {(verdict?.routes?.length ?? 0) > 0 && (
-                  <div className="ledger-detail-block">
-                    <span className="ledger-detail-label">问题路由 / ROUTE</span>
-                    {verdict!.routes!.map((route, index) => (
-                      <div className="ledger-detail-route" key={index}>
-                        <span>{route.type}</span>
-                        <span>→</span>
-                        <strong>{targetLabel(route.target)}</strong>
-                      </div>
-                    ))}
+                  <div className="mt-4 border-t border-separator-border pt-4">
+                    <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-text-tertiary">问题路由 / route</div>
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {verdict!.routes!.map((route, index) => (
+                        <div key={index} className="flex items-center gap-2 rounded-xl bg-background-secondary-default px-2.5 py-1.5 text-caption-1-regular">
+                          <span className="font-mono text-caption-2-semibold text-accent-600">{route.type}</span>
+                          <RiArrowRightLine className="size-3.5 text-accent-600" aria-hidden />
+                          <span className="text-text-secondary">{targetLabel(route.target)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
             )}
-            <div className="ledger-key">
-              <span><i className="key-dot ok" /> 证据支持</span>
-              <span><i className="key-dot bad" /> 缺少证据 / 数字不一致</span>
+            <div className="mt-4 flex flex-col gap-1.5 border-t border-separator-border pt-3 text-caption-2-regular text-text-tertiary">
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-status-lime-text" /> 证据支持</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-status-rose-text" /> 缺少证据 / 数字不一致</span>
             </div>
-          </aside>
+          </Surface>
         </div>
       )}
 
       {tab === 'verify' && (
-        <div className="verify-layout">
-          <div className="panel verify-hero">
+        <div className="mt-4 flex flex-col gap-4">
+          <Surface className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
             <div>
-              <div className="eyebrow">VERIFICATION</div>
-              <h2>{verdict?.passed ? '核查通过' : verdict ? '需要复核' : '等待核查'}</h2>
-              <p>
+              <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Verification</div>
+              <h2 className="mt-1.5 text-title-1-medium text-text-primary">{verdict?.passed ? '核查通过' : verdict ? '需要复核' : '等待核查'}</h2>
+              <p className="mt-2 max-w-2xl text-body-2-regular leading-relaxed text-text-secondary">
                 {verdict
                   ? `事实核查员逐条核对了 ${verdict.claims?.length ?? 0} 条结论。核查不通过时，运行时会按问题类型回到对应的上游节点，而不是一律重写。`
                   : '报告生成后，核查员会抽取结论、核对引用与数字，再决定是否回环。'}
               </p>
             </div>
             <ScoreRing score={verdict?.score ?? detail.run.score ?? 0} size={112} />
-          </div>
+          </Surface>
 
-          <div className="verify-grid">
-            <div className="panel">
-              <div className="panel-head compact">
+          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <Surface className="p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="eyebrow">CLAIM BY CLAIM</div>
-                  <h2>逐条核查</h2>
+                  <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Claim by claim</div>
+                  <h2 className="mt-1.5 text-title-3-semibold text-text-primary">逐条核查</h2>
                 </div>
-                <Pill tone={verdict?.passed ? 'green' : 'orange'}>{verdict?.passed ? 'PASS' : 'REVIEW'}</Pill>
+                <Badge color={verdict?.passed ? 'primary' : 'neutral'}>{verdict?.passed ? 'Pass' : 'Review'}</Badge>
               </div>
               {(verdict?.routes?.length ?? 0) > 0 && (
-                <div className="route-list">
-                  <div className="route-list-head">本轮问题路由</div>
+                <div className="mt-4 flex flex-col gap-1.5 rounded-2xl border border-accent-200 bg-accent-50 p-3">
+                  <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-accent-700">本轮问题路由</div>
                   {verdict!.routes!.map((route, index) => (
-                    <div className="route-item" key={index}>
-                      <span className="route-type">{route.type}</span>
-                      <span className="route-arrow">→</span>
-                      <strong>{targetLabel(route.target)}</strong>
-                      <span className="route-message">{route.message}</span>
+                    <div key={index} className="flex flex-wrap items-baseline gap-1.5 text-caption-1-regular">
+                      <span className="font-mono text-caption-2-semibold text-accent-700">{route.type}</span>
+                      <span className="text-text-tertiary">→</span>
+                      <strong className="font-medium text-accent-700">{targetLabel(route.target)}</strong>
+                      <span className="text-text-tertiary">{route.message}</span>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="claim-list">
+              <div className="mt-4 flex flex-col gap-2">
                 {(verdict?.claims ?? []).map((claim, index) => (
-                  <div className={`claim ${claim.supported ? 'ok' : 'bad'}`} key={index}>
-                    <span className="claim-icon">{claim.supported ? <Check size={13} /> : <X size={13} />}</span>
+                  <div key={index} className={cx('flex gap-2.5 rounded-2xl border p-3', claim.supported ? 'border-separator-border bg-background-secondary-default' : 'border-status-rose-text/20 bg-status-rose-background/40')}>
+                    <span className={cx('mt-0.5 grid size-5 shrink-0 place-items-center rounded-full', claim.supported ? 'bg-status-lime-background text-status-lime-text' : 'bg-status-rose-background text-status-rose-text')}>
+                      {claim.supported ? <RiCheckLine className="size-3.5" /> : <RiCloseLine className="size-3.5" />}
+                    </span>
                     <div>
-                      <p>{claim.claim}</p>
-                      <span>{claim.reason}{claim.citation ? ` · [${claim.citation}]` : ''}</span>
+                      <p className="text-body-2-regular leading-relaxed text-text-primary">{claim.claim}</p>
+                      <p className="mt-1 text-caption-1-regular text-text-tertiary">{claim.reason}{claim.citation ? ` · [${claim.citation}]` : ''}</p>
                     </div>
                   </div>
                 ))}
-                {!verdict && <div className="hint">暂无可核查的结论。</div>}
+                {!verdict && <p className="py-4 text-caption-1-regular text-text-tertiary">暂无可核查的结论。</p>}
               </div>
-            </div>
+            </Surface>
 
-            <div className="panel">
-              <div className="panel-head compact">
+            <Surface className="p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="eyebrow">SELF-LOOP</div>
-                  <h2>回环历史</h2>
+                  <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Self-loop</div>
+                  <h2 className="mt-1.5 text-title-3-semibold text-text-primary">回环历史</h2>
                 </div>
-                <Pill tone="orange">{verifierRuns.length} 轮</Pill>
+                <Badge color="neutral">{verifierRuns.length} 轮</Badge>
               </div>
-              <div className="loop-list">
+              <div className="mt-4 flex flex-col gap-2">
                 {verifierRuns.map((run, index) => (
-                  <div className="loop-item" key={run.id}>
-                    <span className="loop-index">L{index + 1}</span>
-                    <div>
-                      <strong>{run.output?.verdict?.passed ? '通过' : '未通过'}</strong>
-                      <span>
+                  <div key={run.id} className="flex items-center gap-2.5 rounded-2xl border border-separator-border p-3">
+                    <span className="rounded-md bg-accent-100 px-1.5 py-0.5 font-mono text-caption-2-semibold text-accent-700">L{index + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-body-2-medium text-text-primary">{run.output?.verdict?.passed ? '通过' : '未通过'}</div>
+                      <div className="mt-0.5 text-caption-1-regular text-text-tertiary">
                         {Math.round((run.output?.verdict?.score ?? 0) * 100)}% · {run.output?.verdict?.issues.length ?? 0} 条问题
                         {run.output?.verdict?.selectedTarget
                           ? ` · → ${targetLabel(run.output.verdict.selectedTarget)}`
                           : run.output?.verdict?.routes?.[0]?.target
                             ? ` · → ${targetLabel(run.output.verdict.routes[0].target)}`
                             : ''}
-                      </span>
+                      </div>
                     </div>
-                    {run.output?.verdict?.passed ? <BadgeCheck size={16} className="ok-icon" /> : <AlertTriangle size={16} className="warn-icon" />}
+                    {run.output?.verdict?.passed ? <RiCheckLine className="size-4 text-status-lime-text" /> : <RiErrorWarningLine className="size-4 text-status-orange-text" />}
                   </div>
                 ))}
-                {verifierRuns.length === 0 && <div className="hint">尚未执行核查。</div>}
+                {verifierRuns.length === 0 && <p className="text-caption-1-regular text-text-tertiary">尚未执行核查。</p>}
               </div>
               {verifierRuns.length > 1 && (
-                <div className="loop-note">
-                  <GitBranch size={14} />
+                <div className="mt-3 flex gap-2 rounded-2xl bg-background-secondary-default p-3 text-caption-1-regular leading-relaxed text-text-tertiary">
+                  <RiGitBranchLine className="mt-0.5 size-3.5 shrink-0 text-accent-600" />
                   <span>第 1 轮未通过后，系统优先处理 citation，把问题路由到竞争情报员；上游重跑后，第 2 轮核查通过。</span>
                 </div>
               )}
-            </div>
+            </Surface>
           </div>
         </div>
       )}
 
       {tab === 'events' && (
-        <div className="panel events-full">
-          <div className="panel-head compact">
+        <Surface className="mt-4 overflow-hidden p-0">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-separator-border px-5 py-4">
             <div>
-              <div className="eyebrow">EVENT LOG</div>
-              <h2>完整事件流</h2>
+              <div className="text-caption-1-semibold uppercase tracking-[0.16em] text-accent-600">Event log</div>
+              <h2 className="mt-1.5 text-title-3-semibold text-text-primary">完整事件流</h2>
             </div>
-            <span className="hint">{events.length} 条事件 · 可回放</span>
+            <span className="text-caption-1-regular text-text-tertiary">{events.length} 条事件 · 可回放</span>
           </div>
-          <div className="event-table">
-            <div className="event-table-head">
-              <span>#</span><span>时间</span><span>类型</span><span>节点</span><span>消息</span>
-            </div>
-            {events.map((event) => (
-              <div className="event-table-row" key={event.seq}>
-                <span className="mono">{event.seq}</span>
-                <span className="mono">{formatTime(event.ts)}</span>
-                <span><code>{event.type}</code></span>
-                <span className="mono">{event.nodeId ?? '—'}</span>
-                <span>{event.message}</span>
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <div className="grid grid-cols-[48px_76px_160px_96px_minmax(260px,1fr)] gap-3 border-b border-separator-border bg-background-secondary-default px-5 py-2.5 text-caption-2-semibold uppercase tracking-[0.08em] text-text-tertiary">
+                <span>#</span><span>时间</span><span>类型</span><span>节点</span><span>消息</span>
               </div>
-            ))}
+              {events.map((event) => (
+                <div key={event.seq} className="grid grid-cols-[48px_76px_160px_96px_minmax(260px,1fr)] gap-3 border-b border-separator-border px-5 py-2.5 text-caption-1-regular last:border-0">
+                  <span className="font-mono text-text-tertiary">{event.seq}</span>
+                  <span className="font-mono text-text-tertiary">{formatTime(event.ts)}</span>
+                  <span><code className="rounded-sm bg-background-tertiary-default px-1 py-0.5 font-mono text-caption-2-medium text-accent-700">{event.type}</code></span>
+                  <span className="font-mono text-text-tertiary">{event.nodeId ?? '—'}</span>
+                  <span className="text-text-secondary">{event.message}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </Surface>
       )}
 
       <Modal
@@ -767,23 +840,23 @@ function NodeOutputView({ node }: { node: NodeRun }) {
   const candidates = output?.candidates ?? []
   if (candidates.length > 0) {
     return (
-      <div className="candidate-view">
-        <div className="candidate-judge">
-          <Sparkles size={16} />
+      <div className="flex flex-col gap-4">
+        <div className="flex gap-2 rounded-2xl bg-background-secondary-default p-3 text-caption-1-regular leading-relaxed text-text-secondary">
+          <RiSparklingLine className="mt-0.5 size-4 shrink-0 text-accent-600" />
           <p>{output?.judge ?? '裁判按证据覆盖与可执行性选择了主判断。'}</p>
         </div>
-        <div className="candidate-grid">
+        <div className="grid gap-3 sm:grid-cols-3">
           {candidates.map((candidate) => (
-            <div className={`candidate-card ${output?.chosenId === candidate.id ? 'chosen' : ''}`} key={candidate.id}>
-              <div className="candidate-head">
-                <strong>{candidate.name}</strong>
-                <Pill tone={output?.chosenId === candidate.id ? 'green' : 'muted'}>{Math.round((candidate.score ?? 0) * 100)}</Pill>
+            <div key={candidate.id} className={cx('relative rounded-2xl border p-4', output?.chosenId === candidate.id ? 'border-accent-300 bg-accent-50' : 'border-separator-border')}>
+              <div className="flex items-center justify-between gap-2">
+                <strong className="text-body-2-medium text-text-primary">{candidate.name}</strong>
+                <Badge color="neutral">{Math.round((candidate.score ?? 0) * 100)}</Badge>
               </div>
-              <p>{candidate.stance}</p>
-              <ul>
+              <p className="mt-2 text-caption-1-regular leading-relaxed text-text-secondary">{candidate.stance}</p>
+              <ul className="mt-2 flex list-disc flex-col gap-1 ps-4 text-caption-2-regular leading-relaxed text-text-tertiary">
                 {candidate.points.map((point, index) => <li key={index}>{point}</li>)}
               </ul>
-              {output?.chosenId === candidate.id && <div className="chosen-tag">裁判选择</div>}
+              {output?.chosenId === candidate.id && <div className="mt-3 text-caption-2-semibold text-accent-700">裁判选择</div>}
             </div>
           ))}
         </div>
@@ -793,32 +866,34 @@ function NodeOutputView({ node }: { node: NodeRun }) {
 
   if (output?.verdict) {
     return (
-      <div className="node-verdict">
-        <div className="node-verdict-head">
-          <ScoreRing score={output.verdict.score} size={80} />
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-4">
+          <ScoreRing score={output.verdict.score} size={84} />
           <div>
-            <strong>{output.verdict.passed ? '核查通过' : '核查未通过'}</strong>
-            <p>{output.verdict.issues.length} 条问题</p>
+            <div className="text-title-3-semibold text-text-primary">{output.verdict.passed ? '核查通过' : '核查未通过'}</div>
+            <p className="mt-0.5 text-caption-1-regular text-text-tertiary">{output.verdict.issues.length} 条问题</p>
           </div>
         </div>
         {(output.verdict.routes?.length ?? 0) > 0 && (
-          <div className="route-list">
-            <div className="route-list-head">问题路由</div>
+          <div className="flex flex-col gap-1.5 rounded-2xl border border-accent-200 bg-accent-50 p-3">
+            <div className="text-caption-2-semibold uppercase tracking-[0.1em] text-accent-700">问题路由</div>
             {output.verdict.routes!.map((route, index) => (
-              <div className="route-item" key={index}>
-                <span className="route-type">{route.type}</span>
-                <span className="route-arrow">→</span>
-                <strong>{targetLabel(route.target)}</strong>
-                <span className="route-message">{route.message}</span>
+              <div key={index} className="flex flex-wrap items-baseline gap-1.5 text-caption-1-regular">
+                <span className="font-mono text-caption-2-semibold text-accent-700">{route.type}</span>
+                <span className="text-text-tertiary">→</span>
+                <strong className="font-medium text-accent-700">{targetLabel(route.target)}</strong>
+                <span className="text-text-tertiary">{route.message}</span>
               </div>
             ))}
           </div>
         )}
-        <div className="claim-list">
+        <div className="flex flex-col gap-2">
           {output.verdict.claims?.map((claim, index) => (
-            <div className={`claim ${claim.supported ? 'ok' : 'bad'}`} key={index}>
-              <span className="claim-icon">{claim.supported ? <Check size={13} /> : <X size={13} />}</span>
-              <div><p>{claim.claim}</p><span>{claim.reason}</span></div>
+            <div key={index} className={cx('flex gap-2.5 rounded-2xl border p-3', claim.supported ? 'border-separator-border' : 'border-status-rose-text/20 bg-status-rose-background/40')}>
+              <span className={cx('mt-0.5 grid size-5 shrink-0 place-items-center rounded-full', claim.supported ? 'bg-status-lime-background text-status-lime-text' : 'bg-status-rose-background text-status-rose-text')}>
+                {claim.supported ? <RiCheckLine className="size-3.5" /> : <RiCloseLine className="size-3.5" />}
+              </span>
+              <div><p className="text-body-2-regular leading-relaxed text-text-primary">{claim.claim}</p><p className="mt-1 text-caption-1-regular text-text-tertiary">{claim.reason}</p></div>
             </div>
           ))}
         </div>
@@ -831,6 +906,8 @@ function NodeOutputView({ node }: { node: NodeRun }) {
   }
 
   return (
-    <pre className="json-view">{JSON.stringify(output?.data ?? output ?? {}, null, 2)}</pre>
+    <pre className="max-h-[56vh] overflow-auto rounded-2xl bg-surface-sidebar p-4 font-mono text-caption-1-regular leading-relaxed text-text-on-sidebar">
+      {JSON.stringify(output?.data ?? output ?? {}, null, 2)}
+    </pre>
   )
 }
