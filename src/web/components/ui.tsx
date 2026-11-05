@@ -94,11 +94,11 @@ export function ScoreRing({
   const radius = size / 2 - 7
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - safe)
-  const color = safe >= 0.85 ? '#3E6B48' : safe >= 0.6 ? '#D4552D' : '#B23A48'
+  const color = safe >= 0.85 ? '#4C6B55' : safe >= 0.6 ? '#B56245' : '#B04A4A'
   return (
     <div className="score-ring" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#e4ddd1" strokeWidth="6" />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#E7E7E9" strokeWidth="6" />
         <circle
           cx={size / 2}
           cy={size / 2}

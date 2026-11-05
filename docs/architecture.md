@@ -27,7 +27,7 @@ Run
 
 | 实体 | 作用 |
 |---|---|
-| `Agent.role` | planner / researcher / analyst / writer / verifier / editor |
+| `Agent.role` | planner / researcher / analyst / writer / verifier / editor / specialist |
 | `GraphNode.data.agentId` | 节点绑定哪个 Agent |
 | `GraphNode.data.angle` | 研究员的检索角度（市场 / 产业链 / 竞争） |
 | `GraphEdge.kind = loop` | 可视化回环边，不参与 DAG 依赖计算 |
@@ -47,7 +47,8 @@ createRun
   → writer 生成 v1
   → verifier 核查
        ├─ 通过 → editor → output → run.completed
-       └─ 不通过 → writer 重置为 pending，带 feedback 重跑
+       └─ 不通过 → 按问题类型选择 target（研究员/分析师/写作）
+                    → 重置 target 及其下游，带 feedback 重跑
                     → verifier 再核查
 ```
 
@@ -84,13 +85,17 @@ depth(id) = 1 + max(depth(target))   // 忽略 loop 边
 核查节点不通过时：
 
 1. 当前 `NodeRun` 标记为 `waiting`，保存核查结果。
-2. `verifier` 自身重置为 `pending`，`writer` 重置为 `pending`。
-3. `feedback` 设为问题清单。
-4. `loopCount + 1`，写 `loop.triggered` 事件。
-5. 下一轮 writer 读取 `feedback`，生成 v2；verifier 再次执行。
-6. 达到 `maxLoop` 后即使未通过也继续终稿，但 `Run.score` 保留低分，UI 标记“需要复核”。
+2. 按问题类型选择 target：
+   - `citation` → 对应角度的研究员；
+   - `number` / `logic` → 首席分析师；
+   - `wording` → 报告撰写师。
+3. 重置 target 及其下游节点，而不是一律重置 writer。
+4. `feedback` 设为带类型和目标的问题清单。
+5. `loopCount + 1`，写 `loop.triggered` 事件（含 `target` 与 `routeType`）。
+6. 下一轮 target 读取 `feedback` 重跑，下游按依赖重算；verifier 再次执行。
+7. 达到 `maxLoop` 后即使未通过也继续终稿，但 `Run.score` 保留低分，UI 标记“需要复核”。
 
-这是“验证驱动”的回环，不是简单重试。回环会改变输入（问题清单），而不是重复同一个调用。
+这是“验证驱动”的回环，不是简单重试。回环会改变输入（问题清单）与执行路径（target），而不是重复同一个调用。
 
 ## 4. 节点能力插件
 
@@ -155,7 +160,7 @@ hooks:
 3. **数字一致性**：忽略年份（1900–2100），检查结论中的数字是否都能在证据原文中找到。
 4. **语义重叠**：对结论与证据做中文分词，要求至少有 2 个实词重叠。
 5. **汇总**：`score = supported / claims`；`passed = score >= threshold`。
-6. **回写**：不通过时输出 `issues`，作为下一轮 writer 的 feedback。
+6. **回写**：不通过时输出 `issues` 与 `routes`，作为下一轮 target 节点的 feedback。
 
 这个算法不是“让模型给自己打分”，而是可复现的规则核查；Live 模式会优先让模型核查，解析失败时回退到规则核查。
 
@@ -182,6 +187,7 @@ hooks:
 | POST | `/api/runs/:id/cancel` | 取消运行 |
 | POST | `/api/kb/search` | BM25 检索测试 |
 | POST | `/api/documents` | JSON 或 multipart 入库 |
+| POST | `/api/agents` | 创建按需专家节点（specialist） |
 | PUT | `/api/agents/:id` | 修改模型 / 温度 / 提示词 / 插件 |
 | PUT | `/api/workflow` | 保存画布位置与调度设置 |
 

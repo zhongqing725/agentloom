@@ -187,11 +187,28 @@ export default function WorkflowPage() {
       const next = outgoing[0]?.target
       const anchorPosition = anchor?.position ?? { x: 700, y: 500 }
       const nextNode = next ? data.workflow.graph.nodes.find((node) => node.id === next) : undefined
-      const position = nextNode
-        ? {
-            x: (anchorPosition.x + nextNode.position.x) / 2,
-            y: Math.max(anchorPosition.y, nextNode.position.y) + 115,
+      const shiftIds = new Set<string>()
+      if (nextNode) {
+        shiftIds.add(nextNode.id)
+        let changed = true
+        while (changed) {
+          changed = false
+          for (const edge of data.workflow.graph.edges) {
+            if (edge.kind === 'loop') continue
+            if (shiftIds.has(edge.source) && !shiftIds.has(edge.target)) {
+              shiftIds.add(edge.target)
+              changed = true
+            }
           }
+        }
+      }
+      const shiftedNodes = data.workflow.graph.nodes.map((node) =>
+        shiftIds.has(node.id)
+          ? { ...node, position: { x: node.position.x + 190, y: node.position.y } }
+          : node,
+      )
+      const position = nextNode
+        ? { x: nextNode.position.x, y: nextNode.position.y }
         : { x: anchorPosition.x + 190, y: anchorPosition.y + 110 }
       const node = {
         id: newNodeId,
@@ -214,7 +231,7 @@ export default function WorkflowPage() {
             ...(next ? [{ id: `e-${newNodeId}-${next}`, source: newNodeId, target: next }] : []),
           ]
         : baseEdges
-      await saveGraph({ nodes: [...data.workflow.graph.nodes, node], edges })
+      await saveGraph({ nodes: [...shiftedNodes, node], edges })
       setSelectedId(newNodeId)
       setAddOpen(false)
     } catch (cause) {

@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Bot,
   Check,
+  ChevronRight,
   Clock3,
   Copy,
   Download,
@@ -84,6 +85,7 @@ export default function RunPage() {
     return requested === 'report' || requested === 'ledger' || requested === 'verify' || requested === 'events' ? requested : 'graph'
   })
   const [selectedNode, setSelectedNode] = useState<NodeRun | null>(null)
+  const [selectedClaim, setSelectedClaim] = useState(0)
   const [copied, setCopied] = useState(false)
   const feedRef = useRef<HTMLDivElement>(null)
 
@@ -171,6 +173,8 @@ export default function RunPage() {
 
   const ledgerClaims = verdict?.claims ?? []
   const supportedClaims = ledgerClaims.filter((claim) => claim.supported).length
+  const activeClaim = ledgerClaims[Math.min(selectedClaim, Math.max(0, ledgerClaims.length - 1))]
+  const activeCitation = activeClaim?.citation ? citations.find((item) => item.id === activeClaim.citation) : undefined
 
   if (!data || !detail) {
     return (
@@ -416,25 +420,23 @@ export default function RunPage() {
               {ledgerClaims.map((claim, index) => {
                 const citation = claim.citation ? citations.find((item) => item.id === claim.citation) : undefined
                 return (
-                  <div className={`ledger-row ${claim.supported ? 'ok' : 'bad'}`} key={index}>
-                    <div className="ledger-index">{String(index + 1).padStart(2, '0')}</div>
-                    <div className="ledger-main">
+                  <button
+                    className={`ledger-item ${claim.supported ? 'ok' : 'bad'} ${index === selectedClaim ? 'selected' : ''}`}
+                    key={index}
+                    onClick={() => setSelectedClaim(index)}
+                  >
+                    <span className="ledger-index">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="ledger-item-main">
                       <p>{claim.claim}</p>
-                      <div className="ledger-meta">
+                      <span className="ledger-item-meta">
                         <span className={`ledger-status ${claim.supported ? 'ok' : 'bad'}`}>
                           {claim.supported ? '支持' : '不支持'}
                         </span>
                         {claim.citation && <span className="ledger-cite">[{claim.citation}]</span>}
-                        <span>{claim.reason}</span>
-                      </div>
-                      {citation && (
-                        <div className="ledger-evidence">
-                          <strong>{citation.docTitle}</strong>
-                          <p>{citation.quote.slice(0, 220)}…</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                      </span>
+                    </span>
+                    <ChevronRight size={14} className="ledger-chevron" />
+                  </button>
                 )
               })}
               {ledgerClaims.length === 0 && (
@@ -445,21 +447,41 @@ export default function RunPage() {
               )}
             </div>
           </div>
-          <aside className="panel ledger-side">
+          <aside className="panel ledger-side ledger-detail">
             <ScoreRing score={verdict?.score ?? detail.run.score ?? 0} size={100} />
             <h3>{verdict?.passed ? '账本已对齐' : '账本存在缺口'}</h3>
             <p>核查器逐条比对主张与证据；不通过的意见会按类型路由回上游节点。</p>
-            {(verdict?.routes?.length ?? 0) > 0 && (
-              <div className="route-list">
-                <div className="route-list-head">问题路由</div>
-                {verdict!.routes!.map((route, index) => (
-                  <div className="route-item" key={index}>
-                    <span className="route-type">{route.type}</span>
-                    <span className="route-arrow">→</span>
-                    <strong>{targetLabel(route.target)}</strong>
+            {activeClaim && (
+              <>
+                <div className="ledger-detail-block">
+                  <span className="ledger-detail-label">主张 / CLAIM</span>
+                  <p className="ledger-detail-claim">{activeClaim.claim}</p>
+                  <div className="ledger-detail-reason">{activeClaim.reason}</div>
+                </div>
+                <div className="ledger-detail-block">
+                  <span className="ledger-detail-label">证据 / EVIDENCE</span>
+                  {activeCitation ? (
+                    <div className="ledger-detail-quote">
+                      <strong>{activeCitation.docTitle}</strong>
+                      {activeCitation.quote}
+                    </div>
+                  ) : (
+                    <p className="hint">没有找到对应证据。</p>
+                  )}
+                </div>
+                {(verdict?.routes?.length ?? 0) > 0 && (
+                  <div className="ledger-detail-block">
+                    <span className="ledger-detail-label">问题路由 / ROUTE</span>
+                    {verdict!.routes!.map((route, index) => (
+                      <div className="ledger-detail-route" key={index}>
+                        <span>{route.type}</span>
+                        <span>→</span>
+                        <strong>{targetLabel(route.target)}</strong>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
             <div className="ledger-key">
               <span><i className="key-dot ok" /> 证据支持</span>
@@ -551,7 +573,7 @@ export default function RunPage() {
               {verifierRuns.length > 1 && (
                 <div className="loop-note">
                   <GitBranch size={14} />
-                  <span>第 1 轮未通过后，系统带着问题清单回到写作节点；第 2 轮修正了数字与引用，核查通过。</span>
+                  <span>第 1 轮未通过后，系统优先处理 citation，把问题路由到竞争情报员；上游重跑后，第 2 轮核查通过。</span>
                 </div>
               )}
             </div>

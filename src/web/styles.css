@@ -874,7 +874,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   .run-row { grid-template-columns: 1fr 80px 50px; }
   .run-row > span:nth-child(4), .run-row > span:nth-child(5), .run-row > span:nth-child(6) { display: none; }
   .doc-grid, .agent-grid, .plugin-grid { grid-template-columns: 1fr; }
-  .field-row, .settings-grid { grid-template-columns: 1fr; }
+  .field-row, .settings-grid, .specialist-grid { grid-template-columns: 1fr; }
   .candidate-grid { grid-template-columns: 1fr; }
   .verify-grid { grid-template-columns: 1fr; }
   .timeline-row { grid-template-columns: 10px minmax(110px, 1fr) 30px 40px 58px; }

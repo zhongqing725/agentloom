@@ -277,7 +277,7 @@ s = prs.slides.add_slide(blank)
 add_bg(s)
 section(s, "PRODUCT", "产品全景：一条可运行的流水线", "从知识入库到报告交付，所有环节在一个工作台里闭环。")
 bands = [
-    ("01  控制台", "总览  /  知识库  /  Agent 团队  /  编排画布  /  运行  /  评测", CARD, LINE, INK),
+    ("01  控制台", "总览  /  知识库  /  团队  /  画布  /  运行  /  证据账本  /  评测", CARD, LINE, INK),
     ("02  API", "Fastify  ·  REST  ·  SSE 实时事件  ·  Markdown 报告导出", SAND, LINE, INK),
     ("03  编排运行时", "调度器  ·  DAG 引擎  ·  Self-Loop  ·  核查器  ·  事件总线", DARK, None, WHITE),
     ("04  数据与模型", "SQLite  ·  中文 BM25  ·  Mock  /  DeepSeek 双模式", CARD, LINE, INK),
@@ -461,7 +461,7 @@ footer(s, 8)
 # =========================================================
 s = prs.slides.add_slide(blank)
 add_bg(s)
-section(s, "VERIFICATION", "验证：报告不是写完就算", "核查结果不是展示分数，而是下一轮写作的输入。")
+section(s, "VERIFICATION", "验证：报告不是写完就算", "核查结果不是展示分数，而是按问题类型路由回上游。")
 # before/after
 tx(s, 0.8, 1.95, 1.6, 0.3, "第一轮", 9, MUTED, bold=True)
 tx(s, 0.72, 2.2, 2.4, 0.9, "85%", 48, ACCENT, font=FONT_SERIF, bold=True)
@@ -497,8 +497,11 @@ line(s, 8.37, 4.27, 8.37, 4.8, RGBColor(0x6A, 0x72, 0x6A), 1.0, arrow=True)
 line(s, 9.55, 4.05, 10.3, 4.05, ACCENT, 1.2, arrow=True, dash=True)
 line(s, 10.3, 4.05, 10.3, 2.95, ACCENT, 1.2, dash=True)
 line(s, 10.3, 2.95, 9.55, 2.95, ACCENT, 1.2, arrow=True, dash=True)
-tx(s, 9.65, 4.15, 1.3, 0.22, "带问题清单", 7.5, ACCENT, bold=True)
+tx(s, 9.65, 4.15, 1.3, 0.22, "按类型路由", 7.5, ACCENT, bold=True)
 tx(s, 7.28, 5.65, 4.95, 0.35, "通过后 → 主编终稿", 10, WHITE, bold=True)
+
+rect(s, 0.72, 5.85, 5.55, 0.62, fill=DARK, line=None, radius=0.1)
+tx(s, 0.95, 5.98, 5.15, 0.35, "缺引用 → 竞争情报员    ·    数字不一致 → 首席分析师", 8.5, WHITE, bold=True)
 footer(s, 9)
 
 
@@ -507,21 +510,20 @@ footer(s, 9)
 # =========================================================
 s = prs.slides.add_slide(blank)
 add_bg(s)
-section(s, "KNOWLEDGE", "知识库：每个结论都能回到原文", "报告里的 [M2]，可以点回证据片段，而不是一句“据资料”。")
-add_pic_fill(s, SHOTS / "report_body.png", 0.72, 1.8, 5.15, 4.95)
-tx(s, 0.72, 6.82, 5.15, 0.2, "报告中的引用与证据索引", 7.5, MUTED2, italic=True)
+section(s, "EVIDENCE LEDGER", "证据账本：每个结论都能回到原文", "报告只是账本的渲染视图；每条主张都有引用、状态与路由目标。")
+add_pic_fill(s, SHOTS / "ledger_body.png", 0.72, 1.8, 4.45, 5.2)
 points = [
-    ("6 篇资料 / 35 个片段", "按章节切分，单节超过 340 字按句切到约 300 字。"),
-    ("中文 BM25 + 双字回退", "词级分词、中文双字、英文/数字 token 混合检索。"),
-    ("稳定引用编号", "M / L / C 前缀按目标文档片段顺序编号，跨轮次可解释。"),
+    ("13 条主张，逐条核对", "最终轮 13 条被支持；第一轮 85% 时定位到 2 条问题。"),
+    ("每条主张可展开证据", "引用原文、文档标题与核查理由同屏，不需要翻日志。"),
+    ("问题按类型路由", "缺引用回研究员，数字不一致回分析师，而不是一律重写。"),
 ]
 for i, (head, body) in enumerate(points):
     y = 2.05 + i * 1.3
-    rect(s, 6.35, y, 0.08, 0.08, fill=ACCENT if i == 0 else TEAL if i == 1 else PURPLE, line=None, radius=0.5)
-    tx(s, 6.58, y - 0.06, 5.8, 0.3, head, 11, INK, bold=True)
-    tx(s, 6.58, y + 0.26, 5.8, 0.55, body, 9.5, MUTED, spacing=1.45)
-rect(s, 6.35, 5.95, 5.95, 0.65, fill=ACCENT_SOFT, line=None, radius=0.12)
-tx(s, 6.55, 6.08, 5.55, 0.35, "“不是看起来像，而是有出处。”", 12, ACCENT, font=FONT_SERIF, bold=True)
+    rect(s, 6.0, y, 0.08, 0.08, fill=ACCENT if i == 0 else TEAL if i == 1 else PURPLE, line=None, radius=0.5)
+    tx(s, 6.23, y - 0.06, 5.8, 0.3, head, 11, INK, bold=True)
+    tx(s, 6.23, y + 0.26, 5.8, 0.55, body, 9.5, MUTED, spacing=1.45)
+rect(s, 6.0, 5.95, 5.95, 0.65, fill=ACCENT_SOFT, line=None, radius=0.12)
+tx(s, 6.2, 6.08, 5.55, 0.35, "“报告只是证据账本的渲染视图。”", 12, ACCENT, font=FONT_SERIF, bold=True)
 footer(s, 10)
 
 
