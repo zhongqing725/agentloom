@@ -1,11 +1,11 @@
 # 织序 AgentLoom — 交接说明
 
-更新：2026-11-07
+更新：2026-11-08
 
 当前分支：`ui/swiss-redesign`
 
-最后提交：`78fcee2`；工具运行时、PDF 入库、四态核查、训练页与 Home 改版仍在工作区，**未提交**。
-状态：`pnpm typecheck` 与 `pnpm smoke` 通过；功能已补齐，提交材料仍待同步。
+最后提交：`98fe560`（工具运行时、PDF 入库、四态核查、运行图快照、团队角色可用化、仓库清理）。
+状态：工作区干净；`pnpm typecheck` / `pnpm smoke` / `pnpm build` 通过。
 
 > 接手顺序：先读本文 → `docs/architecture.md` → `docs/verification.md` → `README.md`。
 > 视觉验收图片在 `docs/boardui/`，旧版提交材料在 `deliverables/`。
@@ -222,7 +222,7 @@ pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 7. **开发服务缓存**：Vite 在启动时读取 `postcss.config.mjs`。如果页面显示无样式裸 HTML，先重启 5173 的 Vite 进程，而不是改页面代码。
 8. **提交材料仍是 11/5 版式**：数字与“工具运行时/四态核查”附录已在 11/8 补进 DOCX/PPTX/PDF，但截图仍是旧界面，团队信息仍是占位；提交前用 `.screens/` 新截图重新导出并替换团队信息。
 9. **团队信息**：白皮书/PPT 里的团队名称、成员仍是占位符，提交前替换。
-10. **当前分支未合并**：改动在 `ui/swiss-redesign` 工作区，尚未提交；比赛提交前确认提交点与构建来源。
+10. **当前分支未合并**：已提交 `98fe560`，但 `ui/swiss-redesign` 尚未合并到 `main`；比赛提交前确认提交点与构建来源。
 11. **工具边界**：只有 `calculator` 与 `knowledge_search`；没有 MCP、浏览器、代码沙箱。评委若问“工具生态”，如实说明这是下一阶段。
 12. **单工作流**：只有一张演示工作流，没有多项目/多工作流选择；平台化叙事不要超过实现。
 
