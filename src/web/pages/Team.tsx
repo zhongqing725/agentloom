@@ -16,7 +16,7 @@ import { SwitchCard } from '@/components/base/switch/switch-card'
 import { Textarea } from '@/components/base/textarea/textarea'
 import { cx } from '@/utils/cx'
 import { Modal, PageHeader, PluginIcon, SectionHead, Surface } from '../components/ui'
-import type { Agent } from '../../shared/types'
+import { TOOL_PLUGIN_IDS, type Agent } from '../../shared/types'
 
 const ROLE_LABEL: Record<string, string> = {
   planner: '规划',
@@ -28,7 +28,7 @@ const ROLE_LABEL: Record<string, string> = {
   specialist: '专家',
 }
 
-const IMPLEMENTED = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations'])
+const IMPLEMENTED = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations', 'tool.calculator'])
 
 export default function Team() {
   const { data, refresh } = useApp()
@@ -55,6 +55,7 @@ export default function Team() {
         temperature: draft.temperature,
         systemPrompt: draft.systemPrompt,
         plugins: draft.plugins,
+        tools: draft.plugins.filter((id) => TOOL_PLUGIN_IDS.includes(id)),
         title: draft.title,
       })
       await refresh()
@@ -75,13 +76,15 @@ export default function Team() {
     })
   }
 
-  const mounted = data.agents.filter((agent) => agent.plugins.length > 0).length
+  const onCanvas = new Set(
+    data.workflow.graph.nodes.map((node) => node.data.agentId).filter((id): id is string => Boolean(id)),
+  )
 
   return (
     <div className="app-page">
       <PageHeader
         title="Agent 团队"
-        meta={`${data.agents.length} 个角色 · ${data.plugins.length} 个能力插件 · ${mounted} 个节点已挂载 · 点击任意节点编辑`}
+        meta={`${data.agents.length} 个角色 · ${onCanvas.size} 个在画布 · ${data.plugins.length} 个能力插件 · 点击任意节点编辑`}
       />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(324px,1fr)]">
@@ -107,6 +110,7 @@ export default function Team() {
                   <span className="block truncate text-[13px] font-medium text-text-primary">{agent.name}</span>
                   <span className="mt-0.5 block text-[10px] tracking-[0.06em] text-text-placeholder">
                     {ROLE_LABEL[agent.role] ?? agent.role}
+                    {onCanvas.has(agent.id) ? '' : ' · 未上画布'}
                   </span>
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[12px] text-text-tertiary">{agent.title}</span>
@@ -208,8 +212,9 @@ export default function Team() {
                   <SwitchCard
                     key={plugin.id}
                     title={plugin.name}
-                    description={plugin.category}
+                    description={IMPLEMENTED.has(plugin.id) ? plugin.category : `${plugin.category} · 目录态`}
                     isSelected={draft.plugins.includes(plugin.id)}
+                    isDisabled={!IMPLEMENTED.has(plugin.id)}
                     onChange={() => togglePlugin(plugin.id)}
                   />
                 ))}

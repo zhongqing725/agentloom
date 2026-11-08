@@ -17,6 +17,7 @@ import {
   RiSparklingLine,
 } from '@remixicon/react'
 import { useApp } from '../App'
+import Antigravity from '../components/Antigravity'
 import { api } from '../api'
 import { Button } from '@/components/base/buttons/button'
 import { IconButton } from '@/components/base/buttons/icon-button'
@@ -36,7 +37,8 @@ import {
   Surface,
 } from '../components/ui'
 import { WorkflowGraph } from '../components/Graph'
-import type { GraphNode, Workflow as WorkflowModel } from '../../shared/types'
+import { SwarmBuild } from '../components/SwarmBuild'
+import { TOOL_PLUGIN_IDS, type Agent, type GraphNode, type Workflow as WorkflowModel } from '../../shared/types'
 
 type Graph = WorkflowModel['graph']
 type Notice = { message: string; tone: 'ok' | 'warn' }
@@ -48,6 +50,9 @@ type SpecialistDraft = {
   systemPrompt: string
   temperature: number
 }
+
+/** Only plugins with a runtime path are draggable; the rest stay catalog-only. */
+const RUNTIME_PLUGINS = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations', 'tool.calculator'])
 
 /**
  * The preset library behind 「添加 Agent」. Each template carries its own
@@ -64,7 +69,7 @@ const SPECIALISTS = [
     title: '独立审查风险、反方证据与下行情形',
     brief: '挑战主判断',
     description: '在主判断形成之后插入一道独立审查：找出被忽略的下行情形、单一来源和过度乐观的假设。',
-    plugins: ['cognition.critique'],
+    plugins: ['knowledge.retrieve'],
     temperature: 0.4,
     systemPrompt:
       '你是独立风险审查员。只审视上游判断的风险面：找出可证伪的假设、单一来源证据、被忽略的下行情形。不要复述结论，不要给出礼貌性的平衡意见。只输出 JSON：{"summary":"","findings":[""],"recommendation":""}',
@@ -74,7 +79,7 @@ const SPECIALISTS = [
     title: '专门挑战主判断，找出证伪条件',
     brief: '站到对立面',
     description: '假定主判断是错的那一方，给出最强的反驳论据与可观察的证伪信号，供分析师修正。',
-    plugins: ['cognition.debate'],
+    plugins: ['knowledge.retrieve'],
     temperature: 0.7,
     systemPrompt:
       '你是反方研究员。假定团队的主判断是错的，给出最强的反驳论据、你最想看到的数据缺口，以及出现什么信号就应当推翻结论。不要两边都说。只输出 JSON：{"thesis":"","counterpoints":[""],"falsifiers":[""]}',
@@ -144,7 +149,7 @@ const SPECIALISTS = [
     title: '中文表达、术语统一与可读性',
     brief: '改表达不改事实',
     description: '统一术语与数字格式，拆掉翻译腔和长定语，指出读起来像机器生成的段落。',
-    plugins: ['cognition.critique'],
+    plugins: [],
     temperature: 0.5,
     systemPrompt:
       '你是中文编辑。只改表达不改事实：统一术语、数字与单位格式，拆开长定语和翻译腔。逐条给出原句与改写，并说明问题类型。只输出 JSON：{"edits":[{"before":"","after":"","reason":""}]}',
@@ -203,6 +208,7 @@ export default function WorkflowPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [draft, setDraft] = useState<SpecialistDraft>(() => draftFromTemplate(0))
   const [insertAfter, setInsertAfter] = useState('writer')
+  const [existingId, setExistingId] = useState('')
   const [creating, setCreating] = useState(false)
   const [pluginBusy, setPluginBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
@@ -263,7 +269,8 @@ export default function WorkflowPage() {
       if (pluginBusy) return
       setPluginBusy(pluginId)
       try {
-        await api.updateAgent(agent.id, { plugins: [...agent.plugins, pluginId] })
+        const next = [...agent.plugins, pluginId]
+        await api.updateAgent(agent.id, { plugins: next, tools: next.filter((id) => TOOL_PLUGIN_IDS.includes(id)) })
         await refresh()
         notify(`已将「${plugin.name}」挂载到「${agent.name}」。`)
       } catch (cause) {
@@ -279,6 +286,9 @@ export default function WorkflowPage() {
 
   const graph = data.workflow.graph
   const flowEdges = graph.edges.filter((edge) => edge.kind !== 'loop')
+  const availableAgents = data.agents.filter(
+    (agent) => !graph.nodes.some((node) => node.data.agentId === agent.id),
+  )
   const selectedNode = graph.nodes.find((node) => node.id === selectedId)
   const selectedAgent = selectedNode?.data.agentId
     ? data.agents.find((agent) => agent.id === selectedNode.data.agentId)
@@ -356,7 +366,10 @@ export default function WorkflowPage() {
       : [...selectedAgent.plugins, pluginId]
     setPluginBusy(pluginId)
     try {
-      await api.updateAgent(selectedAgent.id, { plugins: next })
+      await api.updateAgent(selectedAgent.id, {
+        plugins: next,
+        tools: next.filter((id) => TOOL_PLUGIN_IDS.includes(id)),
+      })
       await refresh()
       notify(
         active
@@ -480,19 +493,70 @@ export default function WorkflowPage() {
     if (ok) notify(existing.length === 1 ? '已断开这条连线。' : `已断开 ${existing.length} 条连线。`)
   }
 
+  const insertAgentNode = async (agent: Agent, anchorId: string): Promise<boolean> => {
+    const anchor = graph.nodes.find((node) => node.id === anchorId)
+    const nextEdge = flowEdges.find((edge) => edge.source === anchorId)
+    const nextNode = nextEdge ? graph.nodes.find((node) => node.id === nextEdge.target) : undefined
+    if (!anchor || !nextEdge || !nextNode) {
+      setError('这个插入位置没有可用的单一上游/下游路径，请重新选择。')
+      return false
+    }
+    const newNodeId = `node-${agent.id}`
+    if (graph.nodes.some((node) => node.id === newNodeId)) {
+      setError('这个角色已经在画布上。')
+      return false
+    }
+    const step = 205
+    const shiftIds = new Set<string>([nextNode.id])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const edge of flowEdges) {
+        if (shiftIds.has(edge.source) && !shiftIds.has(edge.target)) {
+          shiftIds.add(edge.target)
+          changed = true
+        }
+      }
+    }
+    const nodes = graph.nodes.map((node) =>
+      shiftIds.has(node.id)
+        ? { ...node, position: { x: node.position.x + step, y: node.position.y } }
+        : node,
+    )
+    const angle = agent.role === 'researcher' ? agent.name.replace(/研究员|情报员/g, '') : undefined
+    const newNode: GraphNode = {
+      id: newNodeId,
+      type: 'agent',
+      position: { x: nextNode.position.x, y: nextNode.position.y },
+      data: {
+        label: agent.name,
+        subtitle: agent.title,
+        agentId: agent.id,
+        kind: 'agent',
+        ...(angle ? { angle } : {}),
+      },
+    }
+    const ok = await saveGraph({
+      nodes: [...nodes, newNode],
+      edges: [
+        ...graph.edges.filter((edge) => edge.id !== nextEdge.id),
+        { id: `e-${anchor.id}-${newNodeId}`, source: anchor.id, target: newNodeId, kind: 'flow' },
+        { id: `e-${newNodeId}-${nextNode.id}`, source: newNodeId, target: nextNode.id, kind: 'flow' },
+      ],
+    })
+    if (!ok) {
+      setError('插入画布失败，请检查画布状态后重试。')
+      return false
+    }
+    setSelectedId(newNodeId)
+    return true
+  }
+
   const addSpecialist = async () => {
     const name = draft.name.trim()
     const title = draft.title.trim()
     if (!name || !title) {
       setError('请填写 Agent 名称与一句话职责。')
-      return
-    }
-    const anchor = graph.nodes.find((node) => node.id === insertAfter)
-    const outgoing = flowEdges.filter((edge) => edge.source === insertAfter)
-    const nextEdge = outgoing[0]
-    const nextNode = nextEdge ? graph.nodes.find((node) => node.id === nextEdge.target) : undefined
-    if (!anchor || !nextNode) {
-      setError('这个插入位置没有可用的单一上游/下游路径，请重新选择。')
       return
     }
     setCreating(true)
@@ -503,53 +567,17 @@ export default function WorkflowPage() {
         title,
         description: draft.description,
         plugins: draft.plugins,
+        tools: draft.plugins.filter((id) => TOOL_PLUGIN_IDS.includes(id)),
         systemPrompt: draft.systemPrompt,
         temperature: draft.temperature,
       })
-      const newNodeId = `node-${agent.id}`
-      const step = 205
-      const shiftIds = new Set<string>([nextNode.id])
-      let changed = true
-      while (changed) {
-        changed = false
-        for (const edge of flowEdges) {
-          if (shiftIds.has(edge.source) && !shiftIds.has(edge.target)) {
-            shiftIds.add(edge.target)
-            changed = true
-          }
-        }
-      }
-      const nodes = graph.nodes.map((node) =>
-        shiftIds.has(node.id)
-          ? { ...node, position: { x: node.position.x + step, y: node.position.y } }
-          : node,
-      )
-      const newNode: GraphNode = {
-        id: newNodeId,
-        type: 'agent',
-        position: { x: nextNode.position.x, y: nextNode.position.y },
-        data: {
-          label: agent.name,
-          subtitle: agent.title,
-          agentId: agent.id,
-          kind: 'agent',
-        },
-      }
-      const ok = await saveGraph({
-        nodes: [...nodes, newNode],
-        edges: [
-          ...graph.edges.filter((edge) => edge.id !== nextEdge.id),
-          { id: `e-${anchor.id}-${newNodeId}`, source: anchor.id, target: newNodeId, kind: 'flow' },
-          { id: `e-${newNodeId}-${nextNode.id}`, source: newNodeId, target: nextNode.id, kind: 'flow' },
-        ],
-      })
+      const ok = await insertAgentNode(agent, insertAfter)
       if (!ok) {
         setError('Agent 已创建，但插入画布失败。可打开「添加 Agent」重新尝试。')
         return
       }
-      setSelectedId(newNodeId)
       setAddOpen(false)
-      notify(`已添加「${agent.name}」，插在「${anchor.data.label}」之后。`)
+      notify(`已添加「${agent.name}」。`)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '创建 Agent 失败')
     } finally {
@@ -557,22 +585,68 @@ export default function WorkflowPage() {
     }
   }
 
+  const addExistingAgent = async () => {
+    const agent = availableAgents.find((item) => item.id === existingId)
+    if (!agent) {
+      setError('先选择一个团队角色。')
+      return
+    }
+    setCreating(true)
+    setError('')
+    try {
+      const ok = await insertAgentNode(agent, insertAfter)
+      if (!ok) return
+      setAddOpen(false)
+      setExistingId('')
+      notify(`已把「${agent.name}」加入画布。`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '插入失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div className="app-page">
+      <div className="page-particles" aria-hidden>
+        <Antigravity
+          colors={['#5227FF', '#FF9FFC', '#B497CF']}
+          count={1200}
+          magnetRadius={8}
+          ringRadius={6}
+          particleSize={0.4}
+          particleShape="capsule"
+          particleVariance={0.9}
+          waveSpeed={0.5}
+          waveAmplitude={1}
+          colorMode="conic"
+          colorSpeed={0.06}
+          pulseSpeed={2.4}
+          depthFactor={1}
+          ambient={0.3}
+          lerpSpeed={0.08}
+          autoAnimate
+          interactive={false}
+          intro
+          lightMode={false}
+          opacity={0.6}
+        />
+      </div>
       <PageHeader
         title="编排画布"
         meta={`${data.workflow.name} · ${stats.agents} 个 Agent · ${stats.edges} 条连线 · ${stats.loops} 条回环 · 并发 ${data.workflow.settings.maxConcurrency}`}
         actions={
           <>
-            <Button variant="secondary" leadingIcon={RiAddLine} onClick={openAdd}>添加 Agent</Button>
-            <Button variant="ghost" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
-            <Button leadingIcon={RiPlayLargeLine} onClick={() => setRunOpen(true)}>运行此流程</Button>
+            <Button variant="secondary" className="lm-cta-secondary" leadingIcon={RiAddLine} onClick={openAdd}>添加 Agent</Button>
+            <Button variant="ghost" className="lm-cta-secondary" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
+            <Button className="lm-cta-primary" leadingIcon={RiPlayLargeLine} onClick={() => setRunOpen(true)}>运行此流程</Button>
           </>
         }
       />
 
       <div className="relative">
-        <Surface className="relative overflow-hidden p-0">
+        <SwarmBuild graph={graph} agents={data.agents} />
+        <Surface tilt={false} className="relative overflow-hidden p-0">
           <WorkflowGraph
             graph={graph}
             agents={data.agents}
@@ -606,7 +680,7 @@ export default function WorkflowPage() {
                 <RiDraggable className="size-3" aria-hidden />
                 {selectedAgent ? `挂到「${selectedAgent.name}」` : '插件'}
               </span>
-              {data.plugins.map((plugin) => {
+              {data.plugins.filter((plugin) => RUNTIME_PLUGINS.has(plugin.id)).map((plugin) => {
                 const active = Boolean(selectedAgent?.plugins.includes(plugin.id))
                 const Icon = pluginIconComponent(plugin.icon)
                 return (
@@ -678,10 +752,10 @@ export default function WorkflowPage() {
                 <div className="mt-5">
                   <div className="mb-2 flex items-center justify-between px-1">
                     <span className="text-[12px] font-medium text-text-secondary">挂载插件</span>
-                    <span className="text-[11px] text-text-tertiary">{selectedAgent.plugins.length}/{data.plugins.length}</span>
+                    <span className="text-[11px] text-text-tertiary">{selectedAgent.plugins.length}/{RUNTIME_PLUGINS.size}</span>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    {data.plugins.map((plugin) => {
+                    {data.plugins.filter((plugin) => RUNTIME_PLUGINS.has(plugin.id)).map((plugin) => {
                       const active = selectedAgent.plugins.includes(plugin.id)
                       return (
                         <div key={plugin.id} className="flex items-center gap-2.5 rounded-[12px] bg-background-secondary-default px-2.5 py-2">
@@ -794,22 +868,57 @@ export default function WorkflowPage() {
         open={addOpen}
         onClose={() => setAddOpen(false)}
         title="添加 Agent"
-        subtitle="选择模板并确认插入位置。新 Agent 会接在所选节点之后，原有下游节点整体右移。"
+        subtitle="从团队库插入现有角色，或选模板新建。新节点接在所选节点之后，原有下游节点整体右移。"
         footer={
           <>
             <Button variant="secondary" onClick={() => setAddOpen(false)}>取消</Button>
             <Button
-              onClick={() => void addSpecialist()}
-              disabled={creating || !insertAfter || !draft.name.trim() || !draft.title.trim()}
+              onClick={() => void (existingId ? addExistingAgent() : addSpecialist())}
+              disabled={creating || !insertAfter || (existingId ? false : !draft.name.trim() || !draft.title.trim())}
             >
-              {creating ? '正在创建…' : '创建并插入'}
+              {creating ? '正在插入…' : existingId ? '插入现有角色' : '创建并插入'}
             </Button>
           </>
         }
       >
         <div className="grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
           <div className="flex min-w-0 flex-col">
-            <div className="flex items-baseline justify-between gap-3">
+            <div className="rounded-[14px] bg-background-secondary-default p-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="t-label">团队库</span>
+                <select
+                  value={existingId}
+                  onChange={(event) => {
+                    const id = event.target.value
+                    setExistingId(id)
+                    const agent = availableAgents.find((item) => item.id === id)
+                    if (agent) {
+                      setDraft({
+                        name: agent.name,
+                        title: agent.title,
+                        description: agent.description,
+                        plugins: [...agent.plugins],
+                        systemPrompt: agent.systemPrompt,
+                        temperature: agent.temperature,
+                      })
+                    }
+                  }}
+                  className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+                >
+                  <option value="">新建 Agent（从模板）</option>
+                  {availableAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name} · {agent.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="t-meta mt-1.5">
+                选择团队库角色会直接插入画布，不新建 Agent；已在画布上的角色不在列表。
+              </p>
+            </div>
+
+            <div className="mt-3 flex items-baseline justify-between gap-3">
               <span className="t-label">模板</span>
               <span className="t-meta">{SPECIALISTS.length} 个预设</span>
             </div>
@@ -817,6 +926,7 @@ export default function WorkflowPage() {
               aria-label="模板"
               value={draft.name}
               onChange={(value) => {
+                setExistingId('')
                 const index = SPECIALISTS.findIndex((template) => template.name === value)
                 if (index >= 0) setDraft(draftFromTemplate(index))
               }}
@@ -844,7 +954,7 @@ export default function WorkflowPage() {
                 {draft.systemPrompt}
               </p>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {data.plugins.map((plugin) => {
+                {data.plugins.filter((plugin) => RUNTIME_PLUGINS.has(plugin.id)).map((plugin) => {
                   const active = draft.plugins.includes(plugin.id)
                   const Icon = pluginIconComponent(plugin.icon)
                   return (

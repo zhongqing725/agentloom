@@ -65,6 +65,78 @@ export const PLUGINS: PluginDef[] = [
     color: '#4E6E8E',
     config: { precision: 2 },
   },
+  {
+    id: 'knowledge.graph',
+    name: '图谱检索',
+    category: '知识',
+    description: '按实体关系召回（供应商 → 环节 → 客户），返回路径而不是零散片段。',
+    icon: 'Network',
+    color: '#2F6F6A',
+    config: { depth: 2, maxPaths: 6 },
+  },
+  {
+    id: 'knowledge.freshness',
+    name: '时效校验',
+    category: '知识',
+    description: '标注每条证据的发布日期与半衰期，过期证据自动降权。',
+    icon: 'Clock',
+    color: '#7A6A3B',
+    config: { halfLifeDays: 180, penalty: 0.5 },
+  },
+  {
+    id: 'cognition.decompose',
+    name: '任务分解',
+    category: '认知',
+    description: '把一个大问题拆成可并行的子任务与依赖图，交给调度器排队。',
+    icon: 'ListTree',
+    color: '#D4552D',
+    config: { maxDepth: 2, parallel: 3 },
+  },
+  {
+    id: 'cognition.strawman',
+    name: '反方建模',
+    category: '认知',
+    description: '生成「最强反方论证」并附带证伪条件，专门用来打自己的结论。',
+    icon: 'Sword',
+    color: '#9B4F6B',
+    config: { arguments: 3, requireFalsifier: true },
+  },
+  {
+    id: 'verify.numbers',
+    name: '数值一致性',
+    category: '验证',
+    description: '跨段落核对同一指标，抓口径、单位与统计期间的冲突。',
+    icon: 'Ruler',
+    color: '#5B5F9E',
+    config: { tolerance: 0.02 },
+  },
+  {
+    id: 'verify.entailment',
+    name: '蕴含判定',
+    category: '验证',
+    description: '判断证据是否真的支持结论，而不是只共享了关键词。',
+    icon: 'Scale',
+    color: '#4E6E8E',
+    config: { minScore: 0.6, labelSet: ['支持', '部分支持', '无关', '矛盾'] },
+  },
+  {
+    id: 'tool.browser',
+    name: '浏览器抓取',
+    category: '工具',
+    description: '打开链接、读取正文与表格，回填成可引用的证据。',
+    icon: 'Globe',
+    color: '#2F6F6A',
+    config: { timeoutMs: 15000, allowlist: [] },
+  },
+  {
+    id: 'tool.python',
+    name: '代码沙箱',
+    category: '工具',
+    description: '在沙箱里跑 pandas 计算与图表，输出可复现的数值与图。',
+    icon: 'Code',
+    color: '#3A3A3A',
+    config: { runtime: 'python3', cpuSeconds: 10, memoryMb: 512 },
+  },
 ]
 
 export const AGENTS: Agent[] = [
@@ -144,8 +216,8 @@ export const AGENTS: Agent[] = [
     temperature: 0.5,
     systemPrompt:
       '你是首席分析师。综合三路研究证据，形成有观点、可被检验的判断。列出稳健、进取、反方三种情景，并给出推荐。只输出 JSON。',
-    tools: [],
-    plugins: ['cognition.diverge'],
+    tools: ['tool.calculator'],
+    plugins: ['cognition.diverge', 'tool.calculator'],
     sort: 5,
   },
   {
@@ -161,7 +233,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是研究报告撰写师。写一份结构清晰的中文研究报告。每个关键结论后用 [M1] 这样的编号标注证据。不要编造没有证据的数字。',
     tools: [],
-    plugins: ['cognition.critique'],
+    plugins: [],
     sort: 6,
   },
   {
@@ -195,6 +267,102 @@ export const AGENTS: Agent[] = [
     tools: [],
     plugins: [],
     sort: 8,
+  },
+  {
+    id: 'agent-data',
+    projectId: PROJECT.id,
+    name: '数据工程师',
+    role: 'specialist',
+    title: '多源数据清洗与对齐',
+    description: '把出货量、价格、份额对齐到同一口径与期间，产出可复现的数据表。',
+    color: '#3A5A78',
+    model: 'deepseek-chat',
+    temperature: 0.1,
+    systemPrompt:
+      '你是数据工程师。把多源数据对齐到同一口径、单位与统计期间，标出缺失值与冲突值。只输出 JSON：series、conflicts、assumptions。',
+    tools: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve'],
+    sort: 9,
+  },
+  {
+    id: 'agent-tech',
+    projectId: PROJECT.id,
+    name: '技术评估专家',
+    role: 'specialist',
+    title: '技术路线、专利与成熟度',
+    description: '判断光波导、MicroLED、端侧模型路线的成熟度与替代风险。',
+    color: '#4F6B4A',
+    model: 'deepseek-chat',
+    temperature: 0.25,
+    systemPrompt:
+      '你是技术评估专家。评估技术路线的成熟度（TRL）、专利集中度与被替代风险，区分演示与量产。只基于证据回答，输出 JSON。',
+    tools: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve'],
+    sort: 10,
+  },
+  {
+    id: 'agent-policy',
+    projectId: PROJECT.id,
+    name: '政策与合规研究员',
+    role: 'researcher',
+    title: '监管、标准、认证与补贴',
+    description: '跟踪各国监管与认证要求，判断合规成本与上市时间窗。',
+    color: '#8A6A3B',
+    model: 'deepseek-chat',
+    temperature: 0.2,
+    systemPrompt:
+      '你是政策与合规研究员。梳理监管、标准、认证与补贴，量化合规对成本与上市时间的影响。只基于证据回答，输出 JSON。',
+    tools: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve'],
+    sort: 11,
+  },
+  {
+    id: 'agent-valuation',
+    projectId: PROJECT.id,
+    name: '估值分析师',
+    role: 'analyst',
+    title: 'DCF、可比公司与敏感性',
+    description: '把研究假设翻译成估值区间，给出关键变量的敏感性表。',
+    color: '#B23A48',
+    model: 'deepseek-chat',
+    temperature: 0.3,
+    systemPrompt:
+      '你是估值分析师。基于研究假设搭建 DCF 与可比公司估值，输出区间、关键假设与敏感性表。数值计算必须调用工具，只输出 JSON。',
+    tools: ['tool.calculator'],
+    plugins: ['tool.calculator'],
+    sort: 12,
+  },
+  {
+    id: 'agent-risk',
+    projectId: PROJECT.id,
+    name: '风险官',
+    role: 'specialist',
+    title: '证伪条件与压力测试',
+    description: '为每个结论写明「什么情况下它是错的」，并做极端情景压力测试。',
+    color: '#7A3B3B',
+    model: 'deepseek-chat',
+    temperature: 0.35,
+    systemPrompt:
+      '你是风险官。为每条结论写出可观察的证伪条件，做极端情景压力测试，标出最脆弱的假设。只输出 JSON。',
+    tools: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve'],
+    sort: 13,
+  },
+  {
+    id: 'agent-interview',
+    projectId: PROJECT.id,
+    name: '访谈整理员',
+    role: 'specialist',
+    title: '纪要 → 观点、引语与待验证假设',
+    description: '把专家访谈与渠道纪要拆成可引用观点，并标出待验证的假设。',
+    color: '#6B5B8A',
+    model: 'deepseek-chat',
+    temperature: 0.2,
+    systemPrompt:
+      '你是访谈整理员。把访谈纪要拆成观点、原话引语与待验证假设，保留说话人角色但不保留姓名。只输出 JSON。',
+    tools: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve'],
+    sort: 14,
   },
 ]
 
@@ -755,6 +923,25 @@ const EDITOR_FIXTURE: EvalFixture = {
   iteration: 1,
 }
 
+const NEW_AGENT_FIXTURE: EvalFixture = {
+  evidence: TRAINING_EVIDENCE,
+  upstream: [
+    {
+      nodeId: 'analyst',
+      title: '首席分析师',
+      data: ANALYST_DATA as unknown as Record<string, unknown>,
+      text: JSON.stringify(ANALYST_DATA),
+      citations: ANALYST_CITATIONS,
+    },
+  ],
+  iteration: 0,
+}
+
+const RISK_FIXTURE: EvalFixture = {
+  ...NEW_AGENT_FIXTURE,
+  upstream: [{ nodeId: 'writer', title: '报告撰写师', text: FINAL_REPORT, citations: ANALYST_CITATIONS }],
+}
+
 const TRAINING_CASES = [
   {
     id: 'case-writer-first',
@@ -776,6 +963,48 @@ const TRAINING_CASES = [
     title: '终稿：核查信息与结构',
     input: '请对已核查的报告做终审，补充核查结论与出品信息。',
     fixture: EDITOR_FIXTURE,
+  },
+  {
+    id: 'case-data-series',
+    agentId: 'agent-data',
+    title: '数据表：把出货量与价格对齐到同一口径',
+    input: '把 2024—2028 年全球出货量、均价与渗透率对齐成一张可复现的数据表，标出冲突值。',
+    fixture: NEW_AGENT_FIXTURE,
+  },
+  {
+    id: 'case-tech-trl',
+    agentId: 'agent-tech',
+    title: '技术评估：光波导与 MicroLED 的成熟度',
+    input: '评估光波导与 MicroLED 微显示的量产成熟度、专利集中度与替代风险。',
+    fixture: NEW_AGENT_FIXTURE,
+  },
+  {
+    id: 'case-policy-window',
+    agentId: 'agent-policy',
+    title: '政策：认证要求对上市时间窗的影响',
+    input: '梳理主要市场的入网认证与隐私合规要求，量化它们对上市时间窗的影响。',
+    fixture: NEW_AGENT_FIXTURE,
+  },
+  {
+    id: 'case-valuation-range',
+    agentId: 'agent-valuation',
+    title: '估值：把研究假设翻成区间',
+    input: '基于 2028 年 3200 万台出货量与 BOM 结构，给出整机厂的估值区间与敏感性表。',
+    fixture: NEW_AGENT_FIXTURE,
+  },
+  {
+    id: 'case-risk-falsifier',
+    agentId: 'agent-risk',
+    title: '风险：给核心结论写证伪条件',
+    input: '为「2028 年出货量 3200 万台」这条核心结论写出可观察的证伪条件并做压力测试。',
+    fixture: RISK_FIXTURE,
+  },
+  {
+    id: 'case-interview-themes',
+    agentId: 'agent-interview',
+    title: '访谈：把纪要拆成观点与待验证假设',
+    input: '把渠道访谈纪要拆成可引用观点、原话语录与待验证假设。',
+    fixture: NEW_AGENT_FIXTURE,
   },
 ]
 

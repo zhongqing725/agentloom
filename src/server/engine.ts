@@ -122,6 +122,15 @@ export async function executeRun(runId: string): Promise<void> {
     publishRunEvent(event)
   }
 
+  const previewValue = (value: unknown): string => {
+    try {
+      const text = typeof value === 'string' ? value : JSON.stringify(value)
+      return text.length > 400 ? `${text.slice(0, 400)}…` : text
+    } catch {
+      return String(value)
+    }
+  }
+
   const addUsage = (usage?: Usage) => {
     if (!usage) return
     totalCost = Number((totalCost + usage.cost).toFixed(5))
@@ -139,10 +148,11 @@ export async function executeRun(runId: string): Promise<void> {
         output: state.output!,
       }))
 
-  const retrieveEvidence = (angle: string): Evidence[] => {
+  const retrieveEvidence = (angle: string, context: string): Evidence[] => {
     const prefix = ANGLE_PREFIX[angle] ?? 'E'
     const preferredDoc = ANGLE_DOC[angle]
-    const hits = searchKnowledge(getDb(), project.id, ANGLE_QUERY[angle] ?? `${angle} AI 眼镜`, 6, preferredDoc).sort((a, b) => {
+    const query = ANGLE_QUERY[angle] ?? `${angle} ${context}`.trim()
+    const hits = searchKnowledge(getDb(), project.id, query, 6, preferredDoc).sort((a, b) => {
       const ap = a.docId === preferredDoc ? 0 : 1
       const bp = b.docId === preferredDoc ? 0 : 1
       if (ap !== bp) return ap - bp
@@ -210,7 +220,13 @@ export async function executeRun(runId: string): Promise<void> {
       if (node.type === 'input') {
         output = { text: run.input, data: { input: run.input } }
       } else if (node.type === 'output') {
+        // Prefer the editor node; if the graph was edited without one, take the
+        // right-most completed node so a custom canvas still produces a report.
         const editor = states.get('editor')?.output
+          ?? [...states.values()]
+            .filter((item) => item.status === 'completed' && item.output)
+            .sort((a, b) => a.node.position.x - b.node.position.x)
+            .at(-1)?.output
         const markdown = editor?.markdown ?? editor?.text ?? ''
         output = {
           text: markdown,
@@ -230,7 +246,10 @@ export async function executeRun(runId: string): Promise<void> {
           angle: node.data.angle,
           input: run.input,
           upstream: buildUpstream(node.id),
-          evidence: agent.role === 'researcher' ? retrieveEvidence(node.data.angle ?? '市场') : [],
+          evidence:
+            agent.role === 'researcher' && agent.plugins.includes('knowledge.retrieve')
+              ? retrieveEvidence(node.data.angle ?? '市场', `${node.data.subtitle ?? ''} ${agent.title}`)
+              : [],
           feedback: feedback || undefined,
           iteration: state.iteration,
           mode: run.mode,
@@ -257,6 +276,21 @@ export async function executeRun(runId: string): Promise<void> {
       const usage = output.usage
       const score = output.verdict?.score ?? output.score
       addUsage(usage)
+
+      for (const call of output.toolCalls ?? []) {
+        emit(
+          'tool.call',
+          `${node.data.label} 调用 ${call.name}(${JSON.stringify(call.args).slice(0, 120)})`,
+          { name: call.name, args: call.args },
+          node.id,
+        )
+        emit(
+          'tool.result',
+          call.error ? `${call.name} 失败：${call.error}` : `${call.name} 返回结果`,
+          { name: call.name, result: previewValue(call.result), error: call.error, ms: call.ms },
+          node.id,
+        )
+      }
 
       if (node.type === 'verifier' && output.verdict) {
         if (!output.verdict.passed && loopCount < maxLoop) {
@@ -310,7 +344,7 @@ export async function executeRun(runId: string): Promise<void> {
 
           emit(
             'loop.triggered',
-            `Self-Loop：${chosen?.type ?? 'issue'} →「${NODE_LABEL[target] ?? target}」`,
+            `Self-Loop：${chosen?.type ?? 'issue'} →「${states.get(target)?.node.data.label ?? target}」`,
             {
               iteration: loopCount,
               target,

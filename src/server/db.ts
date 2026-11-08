@@ -27,8 +27,12 @@ import type {
 import { PROJECT, seedDatabase, seedTraining, WORKFLOW } from './seed.js'
 import { chunkDocument } from './seed.js'
 
-const DATA_DIR = path.resolve(process.cwd(), 'data')
-const DB_PATH = path.join(DATA_DIR, 'agentloom.db')
+// AGENTLOOM_DB lets the smoke test run against a throwaway file instead of the
+// demo database. Default behaviour is unchanged.
+const DB_PATH = process.env.AGENTLOOM_DB
+  ? path.resolve(process.env.AGENTLOOM_DB)
+  : path.join(path.resolve(process.cwd(), 'data'), 'agentloom.db')
+const DATA_DIR = path.dirname(DB_PATH)
 
 let db: DatabaseSync
 
@@ -84,6 +88,9 @@ export function initDb(): DatabaseSync {
       source TEXT NOT NULL,
       tags_json TEXT NOT NULL,
       content TEXT NOT NULL,
+      url TEXT,
+      kind TEXT,
+      published_at TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -113,6 +120,7 @@ export function initDb(): DatabaseSync {
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL,
       workflow_id TEXT NOT NULL,
+      graph_json TEXT,
       status TEXT NOT NULL,
       input TEXT NOT NULL,
       output TEXT,
@@ -204,8 +212,51 @@ export function initDb(): DatabaseSync {
   if (count.n === 0) {
     seedDatabase(db)
   }
+  migrateDocuments(db)
+  migrateRunGraph(db)
+  migrateAgentTools(db)
   seedTraining(db)
   return db
+}
+
+/**
+ * One-time schema/data migration for demo databases created before the tool
+ * runtime existed. Keeps run history instead of forcing `pnpm reset`.
+ */
+function migrateAgentTools(database: DatabaseSync) {
+  const version = (database.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  if (version >= 1) return
+  const row = database
+    .prepare("SELECT tools_json, plugins_json FROM agents WHERE id = 'agent-analyst'")
+    .get() as { tools_json?: string; plugins_json?: string } | undefined
+  if (row) {
+    const tools = parseJson<string[]>(row.tools_json, [])
+    const plugins = parseJson<string[]>(row.plugins_json, [])
+    database
+      .prepare("UPDATE agents SET tools_json = ?, plugins_json = ? WHERE id = 'agent-analyst'")
+      .run(
+        JSON.stringify([...new Set([...tools, 'tool.calculator'])]),
+        JSON.stringify([...new Set([...plugins, 'tool.calculator'])]),
+      )
+  }
+  database.exec('PRAGMA user_version = 1')
+}
+
+/** Adds the graph snapshot column for runs created before snapshots existed. */
+function migrateRunGraph(database: DatabaseSync) {
+  const columns = database.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'graph_json')) {
+    database.exec('ALTER TABLE runs ADD COLUMN graph_json TEXT')
+  }
+}
+
+/** Adds the citation columns to a database created before they existed. */
+function migrateDocuments(database: DatabaseSync) {
+  const columns = database.prepare('PRAGMA table_info(documents)').all() as Array<{ name: string }>
+  const has = (name: string) => columns.some((column) => column.name === name)
+  if (!has('url')) database.exec('ALTER TABLE documents ADD COLUMN url TEXT')
+  if (!has('kind')) database.exec('ALTER TABLE documents ADD COLUMN kind TEXT')
+  if (!has('published_at')) database.exec('ALTER TABLE documents ADD COLUMN published_at TEXT')
 }
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
@@ -351,18 +402,40 @@ export function listDocuments(): KnowledgeDoc[] {
     source: String(row.source),
     tags: parseJson<string[]>(row.tags_json as string, []),
     content: String(row.content),
+    url: row.url ? String(row.url) : undefined,
+    kind: row.kind ? (String(row.kind) as KnowledgeDoc['kind']) : undefined,
+    publishedAt: row.published_at ? String(row.published_at) : undefined,
     createdAt: String(row.created_at),
     chunkCount: Number(row.chunk_count),
   }))
 }
 
-export function addDocument(input: { title: string; source: string; content: string; tags: string[] }): KnowledgeDoc {
+export function addDocument(input: {
+  title: string
+  source: string
+  content: string
+  tags: string[]
+  url?: string
+  kind?: string
+  publishedAt?: string
+}): KnowledgeDoc {
   const project = getProject()
   const id = `doc-${crypto.randomUUID().slice(0, 8)}`
   const now = new Date().toISOString()
   db.prepare(
-    'INSERT INTO documents (id, project_id, title, source, tags_json, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, project.id, input.title, input.source || '手动录入', JSON.stringify(input.tags), input.content, now)
+    'INSERT INTO documents (id, project_id, title, source, tags_json, content, url, kind, published_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    id,
+    project.id,
+    input.title,
+    input.source || '手动录入',
+    JSON.stringify(input.tags),
+    input.content,
+    input.url || null,
+    input.kind || null,
+    input.publishedAt || null,
+    now,
+  )
   chunkDocument(input.content).forEach((text, idx) => {
     db.prepare('INSERT INTO chunks (id, document_id, project_id, idx, text) VALUES (?, ?, ?, ?, ?)').run(
       `${id}-c${idx}`,
@@ -379,6 +452,34 @@ export function deleteDocument(id: string): boolean {
   const result = db.prepare('DELETE FROM documents WHERE id = ?').run(id)
   db.prepare('DELETE FROM chunks WHERE document_id = ?').run(id)
   return Number(result.changes) > 0
+}
+
+export function listChunks(documentId: string): Array<{ id: string; idx: number; text: string }> {
+  const rows = db.prepare('SELECT id, idx, text FROM chunks WHERE document_id = ? ORDER BY idx').all(documentId) as Array<Record<string, unknown>>
+  return rows.map((row) => ({ id: String(row.id), idx: Number(row.idx), text: String(row.text) }))
+}
+
+/** Writes (or refreshes) one training eval case. */
+export function upsertEvalCase(input: {
+  id: string
+  agentId: string
+  title: string
+  input: string
+  fixture: EvalFixture
+}): EvalCase {
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO eval_cases (id, agent_id, title, input, fixture_json, created_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET agent_id = excluded.agent_id, title = excluded.title, input = excluded.input, fixture_json = excluded.fixture_json`,
+  ).run(input.id, input.agentId, input.title, input.input, JSON.stringify(input.fixture), now)
+  return {
+    id: input.id,
+    agentId: input.agentId,
+    title: input.title,
+    input: input.input,
+    fixture: input.fixture,
+    createdAt: now,
+  }
 }
 
 export function getWorkflow(): Workflow {
@@ -425,12 +526,24 @@ export function createRun(input: string, mode: Mode): Run {
     input,
     cost: 0,
     tokens: 0,
+    graph: workflow.graph,
     mode,
     startedAt: new Date().toISOString(),
   }
   db.prepare(
-    'INSERT INTO runs (id, project_id, workflow_id, status, input, cost, tokens, mode, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(run.id, run.projectId, run.workflowId, run.status, run.input, run.cost, run.tokens, run.mode, run.startedAt)
+    'INSERT INTO runs (id, project_id, workflow_id, graph_json, status, input, cost, tokens, mode, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    run.id,
+    run.projectId,
+    run.workflowId,
+    JSON.stringify(run.graph),
+    run.status,
+    run.input,
+    run.cost,
+    run.tokens,
+    run.mode,
+    run.startedAt,
+  )
   return run
 }
 
@@ -462,6 +575,9 @@ export function getRun(id: string): Run | undefined {
     id: String(row.id),
     projectId: String(row.project_id),
     workflowId: String(row.workflow_id),
+    graph: row.graph_json
+      ? parseJson<Workflow['graph']>(String(row.graph_json), { nodes: [], edges: [] })
+      : undefined,
     status: row.status as Run['status'],
     input: String(row.input),
     output: row.output ? String(row.output) : undefined,

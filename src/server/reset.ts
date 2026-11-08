@@ -1,8 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const dataDir = path.resolve(process.cwd(), 'data')
-fs.rmSync(dataDir, { recursive: true, force: true })
+// Only delete the database files. `data/` also holds the verifier benchmark and
+// source snapshots; wiping the whole directory made `pnpm reset` destroy them.
+const dbPath = process.env.AGENTLOOM_DB
+  ? path.resolve(process.env.AGENTLOOM_DB)
+  : path.join(path.resolve(process.cwd(), 'data'), 'agentloom.db')
+
+for (const suffix of ['', '-wal', '-shm']) {
+  fs.rmSync(`${dbPath}${suffix}`, { force: true })
+}
 
 const { initDb, getBootstrap } = await import('./db.js')
 initDb()

@@ -9,6 +9,7 @@
     "dev:api": "tsx watch src/server/index.ts",
     "dev:web": "vite",
     "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke-run.ts",
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server/index.ts",
     "reset": "tsx src/server/reset.ts",
@@ -29,6 +30,8 @@
     "react-router-dom": "^7.8.2",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.7.0",
+    "three": "^0.170.0",
+    "unpdf": "^2.1.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
@@ -36,6 +39,7 @@
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
+    "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^5.0.1",
     "concurrently": "^9.2.1",
     "tailwindcss": "^4.3.4",

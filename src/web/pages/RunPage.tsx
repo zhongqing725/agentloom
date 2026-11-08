@@ -21,7 +21,7 @@ import {
 } from '@remixicon/react'
 import { useApp } from '../App'
 import { api } from '../api'
-import type { Citation, NodeRun, RunEvent } from '../../shared/types'
+import type { Citation, NodeRun, RunEvent, ToolCall } from '../../shared/types'
 import { Button, ButtonLink } from '@/components/base/buttons/button'
 import { Chip } from '@/components/base/badges/chip'
 import { ProgressBar } from '@/components/base/progress/progress'
@@ -208,7 +208,9 @@ export default function RunPage() {
           event.type === 'node.retry' ||
           event.type === 'loop.triggered' ||
           event.type === 'verify.failed' ||
-          event.type === 'node.merge'
+          event.type === 'node.merge' ||
+          event.type === 'tool.call' ||
+          event.type === 'tool.result'
         ) {
           scheduleLoad()
         }
@@ -264,10 +266,11 @@ export default function RunPage() {
 
   const latest = useMemo(() => latestByNode(detail?.nodes ?? []), [detail])
   const selectedNode = selectedNodeId ? latest.get(selectedNodeId) ?? null : null
+  const runGraph = detail?.run.graph ?? data?.workflow.graph
   const statuses = useMemo(() => {
     const map = new Map<string, NodeStatusInfo>()
-    if (!data) return map
-    for (const node of data.workflow.graph.nodes) {
+    if (!runGraph) return map
+    for (const node of runGraph.nodes) {
       const nodeRun = latest.get(node.id)
       map.set(node.id, {
         status: nodeRun?.status ?? 'pending',
@@ -276,7 +279,7 @@ export default function RunPage() {
       })
     }
     return map
-  }, [data, latest])
+  }, [runGraph, latest])
 
   const verifierRuns = useMemo(
     () => (detail?.nodes ?? []).filter((node) => node.nodeId === 'verifier').sort((a, b) => a.iteration - b.iteration),
@@ -312,7 +315,8 @@ export default function RunPage() {
   }
 
   const running = runningNow
-  const workflowNodes = data.workflow.graph.nodes
+  const workflowGraph = detail.run.graph ?? data.workflow.graph
+  const workflowNodes = workflowGraph.nodes
   const completedCount = workflowNodes.filter((node) => latest.get(node.id)?.status === 'completed').length
   const activeRuns = workflowNodes
     .map((node) => latest.get(node.id))
@@ -472,7 +476,7 @@ export default function RunPage() {
           <div className="mt-4 flex flex-col gap-4">
             <Surface className="overflow-hidden p-0">
               <WorkflowGraph
-                graph={data.workflow.graph}
+                graph={workflowGraph}
                 agents={data.agents}
                 plugins={data.plugins}
                 statuses={statuses}
@@ -636,9 +640,31 @@ export default function RunPage() {
                       <span className="min-w-0">
                         <span className="line-clamp-2 text-[13px] leading-relaxed text-text-primary">{claim.claim}</span>
                         <span className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <Chip variant="caption" color={claim.supported ? 'lime' : 'rose'}>
-                            {claim.supported ? '支持' : '不支持'}
+                          <Chip
+                            variant="caption"
+                            color={
+                              claim.label === 'supported'
+                                ? 'lime'
+                                : claim.label === 'partial'
+                                  ? 'yellow'
+                                  : claim.label === 'contradicted'
+                                    ? 'rose'
+                                    : 'neutral'
+                            }
+                          >
+                            {claim.label === 'supported'
+                              ? '支持'
+                              : claim.label === 'partial'
+                                ? '部分支持'
+                                : claim.label === 'contradicted'
+                                  ? '矛盾'
+                                  : '无依据'}
                           </Chip>
+                          {claim.confidence !== undefined && (
+                            <span className="font-mono text-[9px] text-text-placeholder">
+                              {Math.round(claim.confidence * 100)}%
+                            </span>
+                          )}
                           {citation && <span className="font-mono text-[10px] text-accent-600">[{citation.id}]</span>}
                         </span>
                       </span>
@@ -836,7 +862,39 @@ export default function RunPage() {
 }
 
 function NodeOutputView({ node }: { node: NodeRun }) {
-  const output = node.output
+  const calls = node.output?.toolCalls ?? []
+  return (
+    <div className="flex flex-col gap-4">
+      {calls.length > 0 && <ToolTrace calls={calls} />}
+      {renderNodeBody(node.output)}
+    </div>
+  )
+}
+
+function ToolTrace({ calls }: { calls: ToolCall[] }) {
+  return (
+    <div className="rounded-[14px] border border-accent-300 bg-accent-50 p-3">
+      <div className="flex items-center justify-between">
+        <span className="t-label">工具调用</span>
+        <span className="font-mono text-[10px] text-accent-700">{calls.length}</span>
+      </div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {calls.map((call) => (
+          <div key={call.id} className="rounded-[10px] bg-background-primary-default p-2.5">
+            <div className="font-mono text-[10.5px] text-accent-700">
+              {call.name}({JSON.stringify(call.args)})
+            </div>
+            <div className={cx('mt-1 break-all font-mono text-[10.5px]', call.error ? 'text-status-rose-text' : 'text-text-secondary')}>
+              {call.error ?? JSON.stringify(call.result)} · {call.ms}ms
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderNodeBody(output: NodeRun['output']) {
   const candidates = output?.candidates ?? []
   if (candidates.length > 0) {
     return (

@@ -10,6 +10,14 @@ import {
   RiShieldCheckLine,
   RiVerifiedBadgeLine,
   RiCalculatorLine,
+  RiCodeBoxLine,
+  RiGlobalLine,
+  RiListCheck,
+  RiNodeTree,
+  RiRulerLine,
+  RiScalesLine,
+  RiSwordLine,
+  RiTimeLine,
 } from '@remixicon/react'
 import { Modal as BoardModal, ModalBody, ModalFooter, ModalHeader } from '@/components/base/modal/modal'
 import { Chip } from '@/components/base/badges/chip'
@@ -27,6 +35,22 @@ const PLUGIN_ICONS = {
   calculator: RiCalculatorLine,
   'shield-check': RiShieldCheckLine,
   check: RiCheckboxCircleLine,
+  // seed stores camelCase names; both spellings resolve here
+  BookOpen: RiBookOpenLine,
+  GitBranch: RiGitBranchLine,
+  ShieldQuestion: RiQuestionLine,
+  BadgeCheck: RiVerifiedBadgeLine,
+  MessagesSquare: RiDiscussLine,
+  Calculator: RiCalculatorLine,
+  ShieldCheck: RiShieldCheckLine,
+  Network: RiNodeTree,
+  Clock: RiTimeLine,
+  ListTree: RiListCheck,
+  Sword: RiSwordLine,
+  Ruler: RiRulerLine,
+  Scale: RiScalesLine,
+  Globe: RiGlobalLine,
+  Code: RiCodeBoxLine,
 } as const
 
 export function pluginIconComponent(name: string) {
@@ -69,12 +93,14 @@ export function PageHeader({
 type SurfaceProps = HTMLAttributes<HTMLElement> & {
   as?: 'div' | 'section' | 'article' | 'aside'
   className?: string
+  /** Press-to-tilt + specular highlight (see src/web/tilt.ts). */
+  tilt?: boolean
   children: ReactNode
 }
 
-export function Surface({ as: Tag = 'div', className, children, ...props }: SurfaceProps) {
+export function Surface({ as: Tag = 'div', tilt = true, className, children, ...props }: SurfaceProps) {
   return (
-    <Tag {...props} className={cx('glass', className)}>
+    <Tag {...(tilt ? { 'data-tilt': '' } : {})} {...props} className={cx('glass', className)}>
       {children}
     </Tag>
   )

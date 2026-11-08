@@ -12,6 +12,9 @@ export interface Project {
   createdAt: string
 }
 
+/** Where a document came from; drives the citation prefix in the KB. */
+export type DocKind = 'paper' | 'report' | 'news' | 'filing' | 'other'
+
 export interface KnowledgeDoc {
   id: string
   projectId: string
@@ -19,6 +22,11 @@ export interface KnowledgeDoc {
   source: string
   tags: string[]
   content: string
+  /** Canonical link (DOI, publisher page) so a citation can be checked. */
+  url?: string
+  kind?: DocKind
+  /** Publication date of the source, not the import date. */
+  publishedAt?: string
   createdAt: string
   chunkCount: number
 }
@@ -121,6 +129,10 @@ export interface Verdict {
     citation: string | null
     supported: boolean
     reason: string
+    /** Four-state entailment label; v1 only had supported/unsupported. */
+    label?: 'supported' | 'partial' | 'contradicted' | 'unsupported'
+    confidence?: number
+    checks?: string[]
   }>
 }
 
@@ -131,6 +143,19 @@ export interface Candidate {
   points: string[]
   score?: number
   rationale?: string
+}
+
+/** Plugin ids that map to an executable tool; keep in sync with server/tools.ts. */
+export const TOOL_PLUGIN_IDS: string[] = ['tool.calculator', 'knowledge.retrieve']
+
+/** One executed tool call, kept on the node output so the trace is replayable. */
+export interface ToolCall {
+  id: string
+  name: string
+  args: Record<string, unknown>
+  result?: unknown
+  error?: string
+  ms: number
 }
 
 export interface NodeOutput {
@@ -145,6 +170,7 @@ export interface NodeOutput {
   chosenId?: string
   judge?: string
   feedback?: string
+  toolCalls?: ToolCall[]
 }
 
 export interface Run {
@@ -158,6 +184,8 @@ export interface Run {
   cost: number
   tokens: number
   loops?: number
+  /** Graph at creation time; old runs fall back to the current workflow. */
+  graph?: Workflow['graph']
   mode: Mode
   startedAt: string
   finishedAt?: string

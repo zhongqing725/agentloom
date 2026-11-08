@@ -1,6 +1,6 @@
 # 织序 AgentLoom 技术架构
 
-> 本文聚焦运行时、调度、验证与数据。前端设计系统、启动/交接步骤见 [handover.md](./handover.md)；BoardUI 迁移细节见 [boardui-migration.md](./boardui-migration.md)。
+> 本文聚焦运行时、调度、验证与数据。前端设计系统、启动/交接步骤见 [handover.md](./handover.md)。
 
 ## 1. 设计原则
 
@@ -131,13 +131,14 @@ hooks:
 | 插件 | 状态 | 运行时行为 |
 |---|---|---|
 | `cognition.diverge` | 已实现 | 分析师节点展开稳健/进取/反方，裁判按分数选择主判断 |
-| `verify.citations` | 已实现 | 核查员抽取结论，核对引用、数字与语义 |
-| `knowledge.retrieve` | 已实现 | 研究员按角度检索目标文档，生成稳定引用 |
-| `cognition.critique` | 目录态 | 已挂载到写作节点，下一步实现独立审查调用 |
+| `verify.citations` | 已实现 | 核查员抽取结论，做四态判定；未挂载则 fail-closed，分数为 0 |
+| `knowledge.retrieve` | 已实现 | 研究员按角度检索目标文档；同时作为 `knowledge_search` 工具 |
+| `tool.calculator` | 已实现 | 沙箱算术，调用写入 `tool.call` / `tool.result` |
+| `cognition.critique` | 目录态 | 只出现在团队页，标“目录态”，不可挂载 |
 | `cognition.debate` | 目录态 | 正反辩论 + 裁判提炼 |
-| `tool.calculator` | 目录态 | 沙盒数值计算 |
+| `tool.browser` / `tool.python` | 目录态 | 浏览器与代码沙箱，未接入 |
 
-“目录态”插件会出现在插件库和节点配置中，但 MVP 不伪装成已实现能力。
+“目录态”插件会出现在插件库和节点配置里，但画布只允许拖拽四个运行时插件，不伪装成已实现能力。
 
 ### 4.3 发散与裁判
 
@@ -151,24 +152,48 @@ hooks:
 
 之所以不是“同一条思维链复制三份”，是因为三个分支使用不同视角提示词；在 Live 模式下还会使用不同温度。评委可以追问“分支是否真的不同”，答案在候选卡片和分数里。
 
+### 4.4 工具运行时
+
+`Agent.tools` 存的是插件 id，`src/server/tools.ts` 只把其中两个映射成可执行工具：
+
+| id | 工具 | 输入 | 实现 |
+|---|---|---|---|
+| `tool.calculator` | `calculator` | `{ expression }` | 递归下降解析，只接受数字与 `+ - * / ( )`，不走 `eval` |
+| `knowledge.retrieve` | `knowledge_search` | `{ query, limit }` | 复用 BM25，返回片段、来源与评分 |
+
+- **Live**：把工具 JSON Schema 通过 OpenAI `tools` 协议下发；模型返回 `tool_calls` 后本地执行，最多 3 跳，结果以 `role=tool` 回填。
+- **Mock**：直接调用同一个 `invokeTool`，保证离线演示也有真实工具轨迹。
+- **可观察**：每次调用写 `tool.call` 与 `tool.result` 事件，参数、结果、耗时、错误都可回放；完整调用保存在 `NodeOutput.toolCalls`。
+- **失败处理**：工具错误不会让节点崩溃，错误信息进入事件流与模型上下文。
+
 ## 5. 验证算法
 
 `deterministicVerdict` 的核查范围是**事实性章节**（核心结论、市场、产业链、竞争），不包含明确标注为“情景假设”的第五部分和规范性建议。
 
-步骤：
+每条主张由 `classifyClaim` 给出四态之一：`supported` / `partial` / `contradicted` / `unsupported`。判定信号：
 
-1. **抽取结论**：按句切分，过滤标题、引用块、列表编号；只保留含引用或含数字的句子。
-2. **定位引用**：从 `[M2]` 这样的标记找到证据条目。
-3. **数字一致性**：忽略年份（1900–2100），检查结论中的数字是否都能在证据原文中找到。
-4. **语义重叠**：对结论与证据做中文分词，要求至少有 2 个实词重叠。
-5. **汇总**：`score = supported / claims`；`passed = score >= threshold`。
-6. **回写**：不通过时输出 `issues` 与 `routes`，作为下一轮 target 节点的 feedback。
+1. **引用存在性**：没有 `[M2]`、引用不在证据库中，直接 `unsupported`。
+2. **数字**：忽略年份（1900–2100），支持区间（`35%—45%` 蕴含 `40%`）与指标锚点（`平均售价 299` 对 `289`）。
+3. **方向**：增长/下滑、上升/下降的否定翻转。
+4. **单位**：美元/人民币、百分比/百分点、万台/亿台冲突。
+5. **统计期间**：主张的首个年份与引用焦点句的年份是否一致。
+6. **主体**：AR/VR、Meta/苹果/雷鸟等主体错配。
+7. **语义覆盖**：中文分词覆盖率，决定“部分支持”还是“无关”。
 
-这个算法不是“让模型给自己打分”，而是可复现的规则核查；Live 模式会优先让模型核查，解析失败时回退到规则核查。
+汇总：`supported` 记 1，`partial` 记 0.5，其余记 0；`passed = score >= threshold`。不通过时输出 `issues` 与 `routes`，作为下一轮 target 节点的 feedback。
+
+可复现基线（`pnpm tsx scripts/eval-verifier.ts`）：
+
+- 42 条手标难例：四态准确率 88%，`supported` F1 100%，11 条 `contradicted` 没有一条被放过。
+- 143 条构造用例（标签由扰动方式保证）：四态准确率 100%。
+- 对照旧规则 v1：42 条难例四态准确率 55%，会把方向相反的主张判成支持。
+
+Live 模式会优先让模型核查，解析失败时回退到同一套规则核查；细节见 [verification.md](./verification.md)。
 
 ## 6. 知识库与检索
 
-- 入库：按 `##` 章节切分；单节超过 340 字时按句切到约 300 字。
+- 入库：Markdown / TXT 直接读文本；PDF 用 `unpdf` 按页抽取，插入 `<!-- 第 N 页 -->` 标记，扫描件（无文字层）拒绝入库。
+- 切分：按 `##` 章节切分；单节超过 340 字时按句切到约 300 字。
 - 索引：SQLite `chunks` 表；检索时在内存中计算 BM25。
 - 分词：`Intl.Segmenter('zh-CN')` 词级分词 + 中文双字回退 + 英文/数字 token。
 - 排序：BM25（k1=1.5, b=0.75），同文档最多 6 个片段。
@@ -188,44 +213,54 @@ hooks:
 | GET | `/api/runs/:id/report` | 下载 Markdown 报告 |
 | POST | `/api/runs/:id/cancel` | 取消运行 |
 | POST | `/api/kb/search` | BM25 检索测试 |
-| POST | `/api/documents` | JSON 或 multipart 入库 |
+| POST | `/api/documents` | JSON 或 multipart 入库（MD / TXT / PDF） |
 | POST | `/api/agents` | 创建按需专家节点（specialist） |
-| PUT | `/api/agents/:id` | 修改模型 / 温度 / 提示词 / 插件 |
+| PUT | `/api/agents/:id` | 修改模型 / 温度 / 提示词 / 工具 / 插件 |
 | PUT | `/api/workflow` | 保存画布位置与调度设置 |
+| GET / POST | `/api/training` | 读取评测集/版本，或启动一次训练 |
+| GET | `/api/training/:id` | 训练进度与候选分数 |
+| POST | `/api/training/:id/activate` | 启用某个候选提示词 |
+| POST | `/api/training/versions/:id/activate` | 回滚到历史版本 |
+| POST | `/api/training/cases/from-docs` | 从知识库资料自动生成评测用例 |
 
 ## 8. 数据与可观察性
 
 - `run_events` 是 append-only；SSE 连接晚到也会先回放历史事件。
+- `runs.graph_json` 在创建运行时保存当时的 workflow 快照；运行页优先用快照回放，旧运行没有快照时回退当前图。
 - 每个节点执行产生一条 `node_runs`，回环会产生多条，`iteration` 区分。
 - UI 的“节点轨迹”取每个节点的最新一次 `node_run`；核查页保留全部轮次。
-- 事件类型：`run.started`、`node.queued`、`node.started`、`node.branch`、`node.merge`、`node.completed`、`node.retry`、`verify.failed`、`loop.triggered`、`run.completed`。
+- 事件类型：`run.started`、`node.queued`、`node.started`、`node.branch`、`node.merge`、`tool.call`、`tool.result`、`node.completed`、`node.retry`、`verify.failed`、`loop.triggered`、`run.completed`。
 
 ## 9. 评测
 
-当前评测页展示：
+评测页展示：
 
 - 累计运行、平均核查分、一次通过率、Tokens。
 - 最近一次运行的“回环前 vs 回环后”对比。
 - 全部运行记录。
 
-下一步：
+训练页（`trainer.ts`）把“反馈优化”落成可回滚的闭环：
 
-1. 固定 3 个研究任务，跑“单分支 / 三视角”两组。
-2. 记录质量、引用支持率、延迟、Tokens。
-3. 把结果写入 `evaluations` 表，形成可复现的实验报告。
+1. 每个 Agent 有固定评测集（`eval_cases`），输入与上游上下文冻结，只换提示词。
+2. 同一套规则核查给 5 个候选打分：基线、强制引用、数字只取证据、去模糊词、组合约束。
+3. 胜出候选写入 `agent_versions` 并可直接启用；旧版本可一键回滚，团队页同步显示新提示词。
+4. Mock 模式用提示词里的显式约束改变输出，离线也能演示“训练前后分数变化”；Live 模式真实调用模型。
+
+下一步：固定任务集上跑“单分支 / 三视角”A/B，把质量、延迟、Tokens 写入实验报告。
 
 ## 10. 安全与边界
 
 - 默认只监听 `127.0.0.1`。
 - API Key 只存在进程内，不落库。
-- 工具执行尚未开放任意代码；`tool.calculator` 是目录态。
+- 工具边界：`calculator` 只接受数字与四则运算字符，不走 `eval`；`knowledge_search` 只读本地 SQLite；没有任意代码执行与网络抓取。
+- 单个工具有 200 字符表达式上限、BM25 结果上限与 3 跳调用上限；工具错误只进入事件流，不终止运行。
 - 没有认证与多租户；这是本地演示/校赛原型，不是生产系统。
 - Mock 数据标注为“模拟整理”，不构成真实投资依据。
 
 ## 11. 下一步
 
-1. **插件钩子标准化**：把 `before / expand / merge / after` 做成通用接口，支持第三方插件。
-2. **团队模板**：从 8 人投研模板扩展到软件交付、客服、政策研究。
-3. **PDF 入库**：接入 PDF 文本抽取与版面清洗。
-4. **实验平台**：单分支 vs 多视角的自动化 A/B。
-5. **权限与沙盒**：插件声明所需工具与数据权限，运行时最小授权。
+1. **MCP / 外部工具**：把工具注册表扩成 MCP 客户端，接浏览器、代码沙箱与第三方 API；每个工具声明权限与超时。
+2. **Agent-as-Tool**：把每个 Agent 暴露成可调用工具，让规划师在运行时决定调用哪个专家，而不是画布上预先连死。
+3. **多工作流**：项目级工作流选择与模板库，支持软件交付、客服、政策研究等第二场景。
+4. **实验平台**：单分支 vs 多视角的自动化 A/B，把质量、延迟、Tokens 写成报告。
+5. **权限与沙盒**：工具声明所需数据权限，运行时最小授权。

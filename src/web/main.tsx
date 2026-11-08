@@ -3,7 +3,9 @@ import { DirectionProvider } from '@/components/foundations/direction/direction'
 import App from './App'
 import '../styles/globals.css'
 import './theme-refresh.css'
-import '../styles/swiss-theme.css'
+import '../styles/apple-theme.css'
+import '../styles/home.css'
+import '../styles/tilt.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')

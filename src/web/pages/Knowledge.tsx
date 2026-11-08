@@ -25,6 +25,14 @@ function formatDate(value: string) {
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
 }
 
+const KIND_LABEL: Record<string, string> = {
+  paper: '论文',
+  report: '官方报告',
+  news: '报道',
+  filing: '公告',
+  other: '其他',
+}
+
 export default function Knowledge() {
   const { data, refresh } = useApp()
   const [open, setOpen] = useState(false)
@@ -33,6 +41,8 @@ export default function Knowledge() {
   const [tags, setTags] = useState('')
   const [content, setContent] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [url, setUrl] = useState('')
+  const [kind, setKind] = useState<'paper' | 'report' | 'news' | 'other'>('report')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('AI 眼镜 出货量 渗透率')
@@ -57,6 +67,8 @@ export default function Knowledge() {
     setTags('')
     setContent('')
     setFile(null)
+    setUrl('')
+    setKind('report')
     setError('')
     setOpen(false)
   }
@@ -71,6 +83,8 @@ export default function Knowledge() {
         form.append('title', title || file.name.replace(/\.[^.]+$/, ''))
         form.append('source', source || '上传文档')
         form.append('tags', tags)
+        form.append('kind', kind)
+        if (url.trim()) form.append('url', url.trim())
         await api.uploadDocument(form)
       } else {
         if (!title.trim() || !content.trim()) throw new Error('标题和正文不能为空。')
@@ -79,6 +93,8 @@ export default function Knowledge() {
           source: source.trim() || '手动录入',
           tags: tags.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean),
           content: content.trim(),
+          kind,
+          url: url.trim() || undefined,
         })
       }
       await refresh()
@@ -119,7 +135,7 @@ export default function Knowledge() {
     <div className="app-page">
       <PageHeader
         title="知识库"
-        meta={`${data.documents.length} 篇资料 · ${totalChunks} 个片段 · 中文 BM25 检索 · 引用可回查`}
+        meta={`${data.documents.length} 篇资料 · 中文 BM25 检索 · 引用可回查`}
         actions={
           <Button leadingIcon={RiAddLine} onClick={() => setOpen(true)}>
             添加资料
@@ -129,7 +145,7 @@ export default function Knowledge() {
 
       <div className="grid gap-4 xl:grid-cols-[336px_minmax(0,1fr)]">
         {/* Catalogue ----------------------------------------------------------- */}
-        <Surface className="panel flex flex-col self-start p-2.5">
+        <Surface className="panel kb-catalogue flex flex-col self-start p-2.5">
           <div className="flex items-center justify-between px-2 pb-2 pt-1">
             <span className="t-label">资料目录</span>
             <Chip variant="caption" color="neutral">{data.documents.length}</Chip>
@@ -210,7 +226,7 @@ export default function Knowledge() {
 
             <TabPanel id="doc">
               {selected ? (
-                <article className="mx-auto max-w-[70ch] px-6 py-7 sm:px-10">
+                <article className="mx-auto max-w-[70ch] px-6 pb-10 pt-6 sm:px-10">
                   <h2 className="text-[22px] font-semibold leading-snug tracking-[-0.02em] text-text-primary">
                     {selected.title}
                   </h2>
@@ -220,11 +236,21 @@ export default function Knowledge() {
                     <span className="t-meta">{selected.chunkCount} 个片段</span>
                     <span className="t-meta">·</span>
                     <span className="t-meta">{formatDate(selected.createdAt)}</span>
+                    {selected.kind && (
+                      <Chip variant="caption" color="neutral">
+                        {KIND_LABEL[selected.kind] ?? selected.kind}
+                      </Chip>
+                    )}
+                    {selected.url && (
+                      <a href={selected.url} target="_blank" rel="noreferrer" className="link text-[11px]">
+                        来源原文
+                      </a>
+                    )}
                     {selected.tags.map((tag) => (
                       <Chip key={tag} variant="caption" color="neutral">{tag}</Chip>
                     ))}
                   </div>
-                  <div className="mt-6 border-t border-border-button-default pt-6">
+                  <div className="mt-5 border-t border-border-button-default pt-5">
                     <MarkdownView content={selected.content.replace(/^#\s+.*\n/, '')} />
                   </div>
                 </article>
@@ -307,6 +333,27 @@ export default function Knowledge() {
             <Input label="来源" value={source} onChange={setSource} placeholder="IDC / 公司公告 / 访谈" />
             <Input label="标签" value={tags} onChange={setTags} placeholder="市场, 出货量" />
           </div>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_140px]">
+            <Input
+              label="来源链接"
+              value={url}
+              onChange={setUrl}
+              placeholder="知网 DOI / 官方报告 URL（用于引用溯源）"
+            />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-text-secondary">类型</span>
+              <select
+                value={kind}
+                onChange={(event) => setKind(event.target.value as typeof kind)}
+                className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                <option value="paper">论文（知网/期刊）</option>
+                <option value="report">官方报告 / 标准</option>
+                <option value="news">报道 / 新闻稿</option>
+                <option value="other">其他</option>
+              </select>
+            </label>
+          </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-text-secondary">上传文件</span>
             <label
@@ -316,14 +363,15 @@ export default function Knowledge() {
               )}
             >
               <RiUpload2Line className="size-5 text-accent-500" aria-hidden />
-              <span className="min-w-0 truncate">{file ? file.name : '选择 .md / .txt 文件'}</span>
+              <span className="min-w-0 truncate">{file ? file.name : '选择 .md / .txt / .pdf 文件'}</span>
               <input
                 type="file"
-                accept=".md,.markdown,.txt"
+                accept=".md,.markdown,.txt,.pdf"
                 className="sr-only"
                 onChange={(event) => setFile(event.target.files?.[0] ?? null)}
               />
             </label>
+            <span className="t-meta">PDF 需要有文字层（知网下载的版本通常有）；扫描件请先 OCR。</span>
           </div>
           {!file && (
             <Textarea

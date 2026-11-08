@@ -1,22 +1,28 @@
 # 织序 AgentLoom — 交接说明
 
-更新：2026-11-05  
-当前分支：`ui/boardui-native`  
-交接前最后代码提交：`95beba6`（本文档与索引另有 docs 提交）  
-状态：前端 BoardUI 迁移完成，代码已提交；该分支**尚未合并到 `main`**。
+更新：2026-11-07
 
-> 接手顺序：先读本文 → `docs/architecture.md` → `docs/boardui-migration.md` → `README.md`。
+当前分支：`ui/swiss-redesign`
+
+最后提交：`78fcee2`；工具运行时、PDF 入库、四态核查、训练页与 Home 改版仍在工作区，**未提交**。
+状态：`pnpm typecheck` 与 `pnpm smoke` 通过；功能已补齐，提交材料仍待同步。
+
+> 接手顺序：先读本文 → `docs/architecture.md` → `docs/verification.md` → `README.md`。
 > 视觉验收图片在 `docs/boardui/`，旧版提交材料在 `deliverables/`。
 
 ## 1. 项目现状
 
 织序 AgentLoom 是面向多 Agent 协作的可视化编排、调度与验证平台。默认演示场景为“AI 眼镜产业链投研”：
 
-- 6 篇模拟知识资料，8 个 Agent 角色，10 个节点、12 条连线、1 条回环边的 DAG。
-- 三路研究并行，首席分析师展开三视角，核查员失败后按问题类型路由并回环。
+- 6 篇模拟知识资料，14 个 Agent 角色（默认工作流用 8 个）；其余角色可在「添加 Agent → 团队库」直接插入，不新建 Agent。
+- 三路研究并行，首席分析师展开三视角并调用 `calculator`，核查员失败后按问题类型路由并回环。
+- 知识库支持 MD / TXT / PDF；文档带来源链接、类型与发布时间。
+- 工具运行时：`calculator` + `knowledge_search`；Mock 模式也真执行，事件流可见 `tool.call` / `tool.result`。
+- 验证：四态蕴含 v2；42 条手标难例准确率 88%，`supported` F1 100%，见 [verification.md](./verification.md)。
+- 训练：5 个提示词候选 + 固定评测集 + 版本启用/回滚，见 `/training`。
 - 前端：React 19 + Vite 7 + TypeScript + React Router 7 + React Flow + BoardUI 源组件 + Tailwind CSS v4（PostCSS）。
 - 后端：Fastify 5 + SQLite（Node 内置 `node:sqlite`）+ SSE。
-- 页面：总览、知识库、Agent 团队、编排画布、运行详情（五个标签）、评测。
+- 页面：Home（首页）、知识库、Agent 团队、编排画布、运行详情（五个标签）、评测、训练；除首页外以 overlay 打开。
 - 设计：钛白 / 石墨 / 单一铜色；BoardUI 语义 token + composite type utilities；React Flow 画布与自定义节点保留。
 - 不使用 Next.js、Server Component、next/font 或 next/navigation。
 
@@ -29,8 +35,15 @@
 ```bash
 cd D:\workspace\agentloom
 pnpm install
-pnpm reset       # 可选：重建演示数据库（会删除 data/）
+pnpm reset       # 可选：重建演示数据库（保留 data/ 里的评测基准）
 pnpm dev         # API 8787 + Web 5173
+```
+
+改完代码至少跑：
+
+```bash
+pnpm typecheck
+pnpm smoke       # 临时库跑完整 Mock 流程，不污染 data/
 ```
 
 - Web：http://127.0.0.1:5173
@@ -57,7 +70,7 @@ Stop-Process -Id <pid> -Force
 
 ## 3. 运行模式与配置
 
-默认是 **Mock 演示模式**，不需要 Key，适合离线录屏。
+默认是 **Mock 演示模式**，不需要 Key，适合离线录屏。Mock 不是假轨迹：`calculator` 与 `knowledge_search` 仍然真实执行，事件流里能看到 `tool.call` / `tool.result`。
 
 使用真实模型：
 
@@ -78,10 +91,10 @@ pnpm dev
 
 ```bash
 pnpm reset
-# 或删除 data/ 后重新启动
+# 或先停服务，再删除 data/agentloom.db* 后重新启动
 ```
 
-- 运行记录、证据、事件都存 SQLite。重置会丢失所有历史运行，但会恢复 8 Agent / 10 节点 / 6 资料初始状态。
+- 运行记录、证据、事件都存 SQLite。重置会丢失所有历史运行，但会恢复 14 Agent / 10 节点 / 6 资料初始状态。
 - 无认证、无多租户，这是本地演示原型。
 
 ## 5. 代码地图
@@ -90,15 +103,18 @@ pnpm reset
 src/
   server/
     index.ts      Fastify 路由、SSE、静态文件
-    engine.ts     DAG 调度、Self-Loop、事件写入
-    llm.ts        Mock / DeepSeek、发散、裁判、核查
+    engine.ts     DAG 调度、Self-Loop、工具事件
+    llm.ts        Mock / DeepSeek、function calling、发散、裁判、核查
+    tools.ts      工具注册表：calculator / knowledge_search
+    entailment.ts 四态主张判定
+    trainer.ts    提示词候选训练、版本启用/回滚
     retrieval.ts  中文 BM25
     seed.ts       演示数据
     db.ts         SQLite 访问
   web/
-    App.tsx       shell、侧栏、顶栏、运行/设置 Modal、路由
+    App.tsx       Home + overlay 路由、设置 Modal
     api.ts        REST 客户端
-    pages/        总览 / 知识库 / 团队 / 编排 / 运行 / 评测
+    pages/        首页 / 知识库 / 团队 / 编排 / 运行 / 评测 / 训练
     components/
       Graph.tsx   React Flow 画布、自定义节点、边、自动平移
       ui.tsx      Modal 适配、PageHeader、Surface、StatusPill、ScoreRing、Markdown
@@ -109,12 +125,11 @@ src/
 docs/
   handover.md            本文
   README.md              文档索引
-  architecture.md        后端、调度、插件、验证设计
-  boardui-migration.md   BoardUI 迁移记录、验证与风险
+  architecture.md        后端、调度、插件、工具运行时、验证设计
+  verification.md        主张基准、端到端冒烟、工具轨迹
   demo-script.md         3 分钟演示脚本
   white-paper.md         白皮书源稿
-  boardui/               当前 UI 截图（桌面 12 张 / 移动 13 张）
-  assets/                迁移前旧截图（主要供历史提交材料参考）
+  boardui/               当前 UI 截图（桌面 3 张 / 移动 1 张）
 deliverables/            白皮书/PPT/提交清单
 boardui.json             BoardUI 源目录与别名配置
 postcss.config.mjs       Tailwind v4 PostCSS 接入
@@ -125,12 +140,14 @@ AGENTS.md / .cursor/     BoardUI always-on 设计规则
 
 | 路由 | 功能 |
 |---|---|
-| `/` | Hero、8 roles 卡、运行输入、统计、最近运行 |
-| `/knowledge` | 资料入库（Markdown/TXT）、检索测试、资料卡、查看/删除 |
-| `/team` | 8 个 Agent、能力插件库、模型/温度/Prompt、插件 Switch |
+| `/` | 首页：14 角色统计、运行入口、最近运行、证据/插件入口 |
+| `/knowledge` | 资料入库（Markdown/TXT/PDF）、检索测试、资料卡、查看/删除 |
+| `/team` | 14 个 Agent、能力插件库、模型/温度/Prompt、插件 Switch（目录态禁用） |
 | `/workflow` | React Flow 画布、拖拽/连线/删除、添加 Agent、插件拖放、检查器 |
-| `/runs/:id` | 执行图谱、研究报告、证据账本、核查与回环、事件流 |
+| `/runs/:id` | 执行图谱、研究报告、证据账本、核查与回环、事件流（含 tool.call） |
 | `/evals` | 累计指标、回环前后对比、全部运行历史 |
+| `/plugins` | 14 个插件、4 个可运行、挂载状态 |
+| `/training` | 固定评测集、候选提示词、版本启用/回滚 |
 
 运行页五个标签由 BoardUI `Tabs` 的 segmented 变体提供；移动端导航由 BoardUI `Modal` 提供抽屉形态。
 
@@ -178,6 +195,7 @@ AGENTS.md / .cursor/     BoardUI always-on 设计规则
 
 ```bash
 pnpm typecheck  # 通过
+pnpm smoke      # 通过：score=1 · loops=1 · tools=2
 pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 ```
 
@@ -189,41 +207,42 @@ pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 - `/runs/:id` 的 graph / report / ledger / verify / events
 - 全部页面 console error = 0；390px 下页面无横向滚动
 - SSE 实时运行、证据账本主张切换、插件 Switch / 拖放、添加/删除 Agent、合法连线与环路拦截、Modal、表单提交、移动导航均已验证。
-- 截图：`docs/boardui/desktop/*.png`（12 张）、`docs/boardui/mobile/*.png`（13 张）。这些截图使用 Mock 演示数据；最后的分段 Tabs/移动导航视觉完善在截图之后提交，细节可能与截图略有差异。
+- 截图：`docs/boardui/desktop/*.png`（3 张：首页/插件/事件流）、`docs/boardui/mobile/*.png`（1 张）；均为 11/8 清洁演示数据（1 条运行、100%）。
 
-没有自动化测试套件；以上是脚本化浏览器验收结果。新改动请至少重跑 typecheck / build，并手动过一遍工作流和运行页。
+自动化测试只有 `pnpm smoke`：临时库跑完整 Mock 流程，断言回环、工具调用与终稿引用。浏览器验收仍是手动为主，新改动请至少重跑 typecheck / smoke / build。
 
 ## 10. 已知风险 / 待办
 
-1. **Bundle 体积**：BoardUI + React Aria 使 JS 约 987 kB，Vite 提示 >500 kB。若比赛提交有首屏要求，按路由 `React.lazy` 拆包。
+1. **Bundle 体积**：主包约 1.1 MB（Three.js 另拆约 486 kB），Vite 提示 >500 kB。若比赛提交有首屏要求，按路由 `React.lazy` 拆包。
 2. **BoardUI CLI registry**：本机 DNS 无法访问 BoardUI registry；当前源文件已落盘，CLI 重新 add 前需恢复网络。
 3. **Dark mode 未启用**：token 支持 `.dark`，但产品只交付浅色界面，没有切换入口。
 4. **移动画布**：390px 使用 0.62 初始缩放 + 平移，不自动 fit 全图；桌面检查器打开时会自动平移选中节点，移动端为底部抽屉。
-5. **真实模型**：Mock 流程已验收；真实 DeepSeek 的延迟、失败重试、成本未做完整回归，当前 Live 进程状态依环境而定。
-6. **截图与最新代码的轻微差异**：最后的分段 Tabs / 移动导航改动没有重新跑全量截图。正式提交前如需要像素级一致，请重新截取 `docs/boardui`。
-7. **开发服务缓存**：Vite 在启动时读取 `postcss.config.mjs`。如果页面显示无样式裸 HTML，先重启 5173 的 Vite 进程，而不是改页面代码。这一点在实际交付中踩过一次。
-8. **提交材料截图早于最新 UI**：`deliverables/` 下的白皮书/PPT 在 BoardUI 迁移前生成，界面截图可能是旧版；如评委材料需要展示新 UI，请重新截图并重新导出 Word/PDF/PPTX。
+5. **真实模型**：Mock 流程已验收；Live 的 function calling 工具循环只做了代码路径，未用真实 Key 回归延迟、工具调用失败与成本。
+6. **截图与最新代码差异大**：Home 改版、训练页、工具事件都没有进入 `docs/boardui` 截图；正式提交前重新截取首页、编排、运行事件流、训练页。
+7. **开发服务缓存**：Vite 在启动时读取 `postcss.config.mjs`。如果页面显示无样式裸 HTML，先重启 5173 的 Vite 进程，而不是改页面代码。
+8. **提交材料仍是 11/5 版式**：数字与“工具运行时/四态核查”附录已在 11/8 补进 DOCX/PPTX/PDF，但截图仍是旧界面，团队信息仍是占位；提交前用 `.screens/` 新截图重新导出并替换团队信息。
 9. **团队信息**：白皮书/PPT 里的团队名称、成员仍是占位符，提交前替换。
-10. **当前分支未合并**：所有改动在 `ui/boardui-native`，`main` 还没有合并；比赛提交前确认使用哪个分支构建。
+10. **当前分支未合并**：改动在 `ui/swiss-redesign` 工作区，尚未提交；比赛提交前确认提交点与构建来源。
+11. **工具边界**：只有 `calculator` 与 `knowledge_search`；没有 MCP、浏览器、代码沙箱。评委若问“工具生态”，如实说明这是下一阶段。
+12. **单工作流**：只有一张演示工作流，没有多项目/多工作流选择；平台化叙事不要超过实现。
 
 ## 11. 交接检查清单
 
-- [ ] 确认分支：`git switch ui/boardui-native`；审阅 `git log --oneline main..HEAD`
+- [ ] 确认分支：`git switch ui/swiss-redesign`；审阅 `git status` 与 `git log --oneline main..HEAD`
 - [ ] `pnpm install`
 - [ ] 如需干净演示数据：先停服务，再 `pnpm reset`
-- [ ] `pnpm typecheck && pnpm build`
+- [ ] `pnpm typecheck && pnpm smoke && pnpm build`
 - [ ] `pnpm dev`，确认 5173 与 8787 可用
 - [ ] 浏览器逐页检查；390px 检查移动导航、运行页 Tabs、Modal
 - [ ] 确认运行模式（Mock / Live）和 Key 归属，不沿用个人 Key
 - [ ] 确认截图、白皮书、PPT、演示脚本的团队信息和界面版本
-- [ ] 合并或归档 `ui/boardui-native` 分支
+- [ ] 提交或归档 `ui/swiss-redesign` 分支
 - [ ] 比赛截止前复核 README 中的截止日期/官网链接
 
 ## 12. 相关链接
 
 - [文档索引](./README.md)
 - [技术架构](./architecture.md)
-- [BoardUI 迁移记录](./boardui-migration.md)
 - [3 分钟演示脚本](./demo-script.md)
 - [白皮书源稿](./white-paper.md)
 - [当前 UI 截图](./boardui/)

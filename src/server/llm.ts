@@ -1,5 +1,7 @@
-import type { Agent, Candidate, Citation, Mode, NodeOutput, Usage, Verdict, VerdictRoute } from '../shared/types.js'
+import type { Agent, Candidate, Citation, Mode, NodeOutput, ToolCall, Usage, Verdict, VerdictRoute } from '../shared/types.js'
 import { firstSentences, tokenize } from './retrieval.js'
+import { classifyClaim, type ClaimVerdict } from './entailment.js'
+import { invokeTool, openAiTools, toolsForAgent } from './tools.js'
 
 export interface Evidence {
   ref: string
@@ -77,6 +79,11 @@ function researcherOutputs(ctx: AgentContext) {
   return ctx.upstream
     .filter((item) => item.nodeId === 'market' || item.nodeId === 'chain' || item.nodeId === 'competition')
     .map((item) => item.output)
+}
+
+/** The writer is usually `writer`, but an edited canvas may name it anything. */
+function lastMarkdown(ctx: AgentContext): NodeOutput | undefined {
+  return [...ctx.upstream].reverse().find((item) => item.output.markdown)?.output
 }
 
 function allCitations(ctx: AgentContext): Citation[] {
@@ -191,8 +198,18 @@ function mockResearcher(ctx: AgentContext): NodeOutput {
     confidence: evidence.length >= 3 ? 0.82 : 0.55,
   }
   const text = asJson(data)
+  // Cite evidence sentences verbatim: the verifier can actually check these.
+  const cited = evidence
+    .slice(0, 3)
+    .map((item) => {
+      const sentence = item.quote.split(/(?<=[。！？])/)[0].replace(/[。！？]$/, '')
+      return `${sentence} [${item.ref}]。`
+    })
+    .join('\n\n')
+  const markdown = cited || [summary, ...keyPoints].join('\n\n')
   return {
     text,
+    markdown,
     data,
     citations,
     usage: usageOf(ctx.agent.systemPrompt + JSON.stringify(evidence), text),
@@ -287,8 +304,16 @@ function mockAnalyst(ctx: AgentContext): NodeOutput {
     chosenId: chosen.id,
   }
   const text = asJson(data)
+  const cited = ctx.evidence
+    .slice(0, 3)
+    .map((item) => {
+      const sentence = item.quote.split(/(?<=[。！？])/)[0].replace(/[。！？]$/, '')
+      return `${sentence} [${item.ref}]。`
+    })
+    .join('\n\n')
   return {
     text,
+    markdown: cited || text,
     data,
     citations,
     candidates,
@@ -329,31 +354,34 @@ function reportV1(ctx: AgentContext): string {
 
 ## 一、核心结论
 
-1. AI 眼镜正处于渗透率拐点前，2024—2028 年出货量复合增速约 65% ${cite('65%')}。
-2. 价值池向光学与 SoC 集中，二者合计约占 BOM 价值池的一半 ${cite('BOM')}。
-3. Meta 仍占据全球约六成份额，中国厂商的机会在性价比与本地生态 ${cite('62%')}。
+1. 2024 年全球 AI 眼镜出货量约 230 万台，同比增长 210% ${cite('230', '210')}。
+2. IDC 预计 2028 年全球出货量达到 3200 万台，2024—2028 年复合增速约 65% ${cite('3200', '65%')}。
+3. 光学与 SoC 合计拿走 BOM 价值池的一半左右 ${cite('一半')}。
+4. 2024 年 Meta 与雷朋合作的 Ray-Ban Meta 系列份额约 62% ${cite('62%')}。
 
 ## 二、市场：拐点前的高增长
 
-2024 年全球 AI 眼镜出货量约 230 万台，同比增长 210% ${cite('230', '210')}。IDC 预计 2028 年达到 3200 万台，对应 2024—2028 年复合增速约 65% ${cite('3200', '65%')}。
+2024 年全球 AI 眼镜出货量约 230 万台，同比增长 210% ${cite('230', '210')}。其中中国市场出货量约 80 万台，占全球 35% ${cite('230')}。IDC 预计 2028 年达到 3200 万台，对应 2024—2028 年复合增速约 65% ${cite('3200', '65%')}。
 
 预计 2028 年全球出货量将突破 5000 万台 ${cite('3200')}。
 
-价格带正在下探。2024 年主流产品 ASP 约 299 美元，随着 BOM 每年下降 8%—12%，2027 年可能降至 249 美元 ${cite('299', '249')}。这会加速渗透，但也会压缩整机毛利。
+价格带正在下探。2024 年 AI 眼镜平均售价约 299 美元，主流产品集中在 249—349 美元 ${cite('299', '249')}。随着 SoC、摄像头模组和声学器件降本，行业平均 BOM 预计每年下降 8%—12% ${cite('BOM', '8%—12%')}。这会加速渗透，但也会压缩整机毛利。
 
 ## 三、产业链：价值向光学与芯片集中
 
-一台 299 美元的 AI 眼镜，BOM 约 160 美元，其中 SoC 占 32%，光学与摄像头占 18%，组装占 14% ${cite('160', '32%')}。
+整机 BOM 约 160 美元，其中 SoC 占 32%，光学与摄像头占 18%，组装占 14% ${cite('160', '32%')}。
 
-毛利率的分布更关键：整机品牌约 25%—35%，组装代工只有 8%—12%，而低功耗 SoC 可达 45%—55% ${cite('25%', '45%')}。这意味着出货量增长并不必然带来整机利润增长。
+整机品牌毛利率约 25%—35%，组装代工约 8%—12%，光学模组约 35%—45%，低功耗 SoC 约 45%—55% ${cite('25%', '45%')}。这意味着出货量增长并不必然带来整机利润增长。
 
-以 2028 年 3200 万台、ASP 249 美元计算，整机市场规模约 79.7 亿美元，对应 BOM 价值池约 40 亿美元 ${cite('79.7', '40')}。光学与 SoC 合计拿走约一半。
+以 2028 年 3200 万台、ASP 249 美元计算，整机市场规模约 79.7 亿美元，对应 BOM 价值池约 40 亿美元 ${cite('79.7', '40')}。光学与 SoC 合计拿走 BOM 价值池的一半左右 ${cite('一半')}。
 
 ## 四、竞争：Meta 领跑，中国厂商追赶
 
-2024 年 Meta 与雷朋合作的 Ray-Ban Meta 系列份额约 62%，优势来自品牌、3000 多家线下门店与社交生态 ${cite('62%', '3000')}。
+2024 年 Meta 与雷朋合作的 Ray-Ban Meta 系列份额约 62%，2025 年预计仍保持在 60% 左右 ${cite('62%', '60%')}。
 
-中国厂商走三条路径：性价比、本地生态、垂直场景。雷鸟、Rokid、小米、华为在不同价格带竞争 ${cite('雷鸟', 'Rokid')}。
+2024 年中国市场雷鸟创新份额约 12%，Rokid 约 9%，小米约 8%，华为约 6% ${cite('雷鸟创新')}。
+
+字节、阿里、百度等互联网公司正在评估 AI 眼镜入口 ${cite('字节')}。
 
 行业将在 2027 年迎来第一轮洗牌。
 
@@ -389,8 +417,12 @@ function reportV2(ctx: AgentContext): string {
       `预计 2028 年全球出货量约 3200 万台，对应 2024—2028 年复合增速约 65% ${cite('3200', '65%')}。`,
     )
     .replace(
+      `其中中国市场出货量约 80 万台，占全球 35% ${cite('230')}。`,
+      `其中中国市场约 48 万台，占全球 21% ${cite('48', '21%')}。`,
+    )
+    .replace(
       '行业将在 2027 年迎来第一轮洗牌。',
-      `行业可能在 2026—2027 年进入第一轮洗牌，手机厂商与互联网公司的进入会加速竞争 ${cite('2026—2027')}。`,
+      `2026—2027 年，行业可能进入第一轮洗牌 ${cite('2026—2027')}。`,
     )
     .replace(
       '## 一、核心结论',
@@ -411,8 +443,16 @@ function mockSpecialist(ctx: AgentContext): NodeOutput {
     reviewedNodes: ctx.upstream.map((item) => item.title),
   }
   const text = asJson(data)
+  const markdown = ctx.evidence
+    .slice(0, 3)
+    .map((item) => {
+      const sentence = item.quote.split(/(?<=[。！？])/)[0].replace(/[。！？]$/, '')
+      return `${sentence} [${item.ref}]。`
+    })
+    .join('\n\n')
   return {
     text,
+    markdown,
     data,
     usage: usageOf(ctx.agent.systemPrompt + JSON.stringify(ctx.upstream.map((item) => item.output.data)), text),
   }
@@ -477,9 +517,35 @@ function applyWriterConstraints(markdown: string, prompt: string, citations: Cit
   return text
 }
 
+/**
+ * Writer path for evidence that is not the built-in demo corpus (an imported
+ * CNKI paper or an official report): every line is lifted from a real quote and
+ * carries that quote's ref, so nothing is invented.
+ */
+function mockEvidenceReport(ctx: AgentContext): string {
+  const citations = allCitations(ctx).slice(0, 5)
+  const lines = citations.map((citation, index) => {
+    const sentence = firstSentences(citation.quote, 1).replace(/\s+/g, ' ').trim()
+    // The ref has to sit inside the sentence: the verifier splits on 。 first.
+    const body = sentence.endsWith('。') ? `${sentence.slice(0, -1)} ` : `${sentence} `
+    return `${index + 1}. ${body}[${citation.id}]。`
+  })
+  const heading = ctx.input.replace(/^请[^《]*《([^》]+)》.*$/, '$1').slice(0, 48) || '研究结论'
+  return `# ${heading}\n\n## 一、核心结论\n\n${lines.join('\n')}\n\n## 证据索引\n\n${citations
+    .map((citation) => `- [${citation.id}] ${citation.docTitle}`)
+    .join('\n')}\n`
+}
+
 function mockWriter(ctx: AgentContext): NodeOutput {
-  const draft = ctx.iteration > 0 || ctx.feedback ? reportV2(ctx) : reportV1(ctx)
   const citations = allCitations(ctx)
+  // The built-in demo keeps its scripted v1 → v2 report; any other corpus gets
+  // an evidence-grounded report instead of text that ignores the source.
+  const isDemoCorpus = citations.some((citation) => /^[MLC]\d+$/.test(citation.id))
+  const draft = isDemoCorpus
+    ? ctx.iteration > 0 || ctx.feedback
+      ? reportV2(ctx)
+      : reportV1(ctx)
+    : mockEvidenceReport(ctx)
   const markdown = applyWriterConstraints(draft, ctx.agent.systemPrompt, citations)
   const data = {
     markdown,
@@ -559,63 +625,47 @@ function deterministicVerdict(markdown: string, citations: Citation[], threshold
     claim: string
     citation: string | null
     supported: boolean
+    label: ClaimVerdict['label']
+    confidence: number
+    checks: string[]
     reason: string
     route?: VerdictRoute
   }> = claims.map((claim) => {
     const refs = [...claim.matchAll(/\[([A-Z]\d+)\]/g)].map((match) => match[1])
-    if (refs.length === 0) {
-      const reason = '结论没有引用证据。'
-      return {
-        claim,
-        citation: null,
-        supported: false,
-        reason,
-        route: { type: 'citation', target: inferRouteTarget(claim), message: reason },
-      }
+    const citation = refs.length > 0 ? refMap.get(refs[0]) : undefined
+    const verdict = classifyClaim(claim, citation)
+    const supported = verdict.label === 'supported'
+
+    let route: VerdictRoute | undefined
+    if (!supported) {
+      const type: VerdictRoute['type'] =
+        refs.length === 0 || !citation
+          ? 'citation'
+          : verdict.checks.some((check) => check.startsWith('number-missing'))
+            ? 'number'
+            : 'logic'
+      // A wrong number is a synthesis error: send it to the analyst, not the
+      // researcher whose quote was correct.
+      route = { type, target: type === 'number' ? 'analyst' : inferRouteTarget(claim, refs[0]), message: verdict.reason }
     }
-    const citation = refMap.get(refs[0])
-    if (!citation) {
-      const reason = `引用 ${refs[0]} 不在证据库中。`
-      return {
-        claim,
-        citation: refs[0],
-        supported: false,
-        reason,
-        route: { type: 'citation', target: inferRouteTarget(claim, refs[0]), message: reason },
-      }
+
+    return {
+      claim,
+      citation: refs[0] ?? null,
+      supported,
+      label: verdict.label,
+      confidence: verdict.confidence,
+      checks: verdict.checks,
+      reason: verdict.reason,
+      route,
     }
-    const claimNumbers = numbersIn(claim.replace(/\[[A-Z]\d+\]/g, ''))
-    const quoteNumbers = numbersIn(citation.quote)
-    const missingNumber = claimNumbers.find((number) => !quoteNumbers.includes(number))
-    if (missingNumber) {
-      const reason = `数字 ${missingNumber} 在证据中找不到对应值。`
-      return {
-        claim,
-        citation: refs[0],
-        supported: false,
-        reason,
-        route: { type: 'number', target: 'analyst', message: reason },
-      }
-    }
-    const claimTokens = new Set(tokenize(claim.replace(/\[[A-Z]\d+\]/g, '')))
-    const quoteTokens = new Set(tokenize(citation.quote))
-    let overlap = 0
-    for (const token of claimTokens) if (quoteTokens.has(token)) overlap += 1
-    if (overlap < 2) {
-      const reason = '结论与引用文本的语义重叠不足。'
-      return {
-        claim,
-        citation: refs[0],
-        supported: false,
-        reason,
-        route: { type: 'logic', target: 'analyst', message: reason },
-      }
-    }
-    return { claim, citation: refs[0], supported: true, reason: '引用存在，数字与语义均可对应。' }
   })
 
-  const supported = checked.filter((item) => item.supported).length
-  const score = checked.length === 0 ? 0 : Number((supported / checked.length).toFixed(2))
+  const weightOf = (item: { label: string }) => (item.label === 'supported' ? 1 : item.label === 'partial' ? 0.5 : 0)
+  const score =
+    checked.length === 0
+      ? 0
+      : Number((checked.reduce((sum, item) => sum + weightOf(item), 0) / checked.length).toFixed(2))
   const issues = checked.filter((item) => !item.supported).map((item) => `${item.reason}「${item.claim.slice(0, 38)}…」`)
   const routes = checked
     .filter((item) => !item.supported && item.route)
@@ -630,7 +680,7 @@ function deterministicVerdict(markdown: string, citations: Citation[], threshold
 }
 
 function mockVerifier(ctx: AgentContext, threshold: number): NodeOutput {
-  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output
+  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output ?? lastMarkdown(ctx)
   const markdown = writer?.markdown ?? writer?.text ?? ''
   const verdict = deterministicVerdict(markdown, allCitations(ctx), threshold)
   const text = asJson(verdict)
@@ -644,7 +694,7 @@ function mockVerifier(ctx: AgentContext, threshold: number): NodeOutput {
 }
 
 function mockEditor(ctx: AgentContext, verdict?: Verdict): NodeOutput {
-  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output
+  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output ?? lastMarkdown(ctx)
   const markdown = writer?.markdown ?? writer?.text ?? '# 研究报告\n\n暂无内容。'
   const review = verdict
     ? `> 核查结论：${verdict.passed ? '通过' : '需人工复核'}，引用支持率 ${(verdict.score * 100).toFixed(0)}%。`
@@ -680,11 +730,38 @@ function perspectivePrompt(perspective: string): string {
   return '从反方视角出发：挑战主流叙事，寻找证伪条件、隐藏风险和可能被高估的部分。'
 }
 
-async function callLive(system: string, user: string, options?: { json?: boolean; temperature?: number }): Promise<{ text: string; usage: Usage }> {
+type RawToolCall = {
+  id: string
+  type?: string
+  function: { name: string; arguments: string }
+}
+
+type ChatMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_calls?: RawToolCall[]
+  tool_call_id?: string
+}
+
+async function callLive(
+  system: string,
+  user: string,
+  options?: {
+    json?: boolean
+    temperature?: number
+    messages?: ChatMessage[]
+    tools?: ReturnType<typeof openAiTools>
+  },
+): Promise<{ text: string; usage: Usage; toolCalls?: RawToolCall[] }> {
   const apiKey = process.env.AGENTLOOM_API_KEY
   if (!apiKey) throw new Error('AGENTLOOM_API_KEY 未配置')
   const baseUrl = (process.env.AGENTLOOM_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/$/, '')
   const model = process.env.AGENTLOOM_MODEL || 'deepseek-chat'
+  const messages: ChatMessage[] = options?.messages ?? [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ]
+  const promptText = messages.map((message) => message.content ?? '').join('\n')
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -693,12 +770,10 @@ async function callLive(system: string, user: string, options?: { json?: boolean
     },
     body: JSON.stringify({
       model,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
+      messages,
       temperature: options?.temperature ?? 0.3,
       ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
+      ...(options?.tools?.length ? { tools: options.tools, tool_choice: 'auto' } : {}),
     }),
   })
   if (!response.ok) {
@@ -706,14 +781,16 @@ async function callLive(system: string, user: string, options?: { json?: boolean
     throw new Error(`LLM 请求失败 ${response.status}: ${detail.slice(0, 240)}`)
   }
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
+    choices?: Array<{ message?: { content?: string; tool_calls?: RawToolCall[] } }>
     usage?: { prompt_tokens?: number; completion_tokens?: number }
   }
-  const text = payload.choices?.[0]?.message?.content ?? ''
+  const message = payload.choices?.[0]?.message
+  const text = message?.content ?? ''
   return {
     text,
+    toolCalls: message?.tool_calls,
     usage: {
-      promptTokens: payload.usage?.prompt_tokens ?? estimateTokens(system + user),
+      promptTokens: payload.usage?.prompt_tokens ?? estimateTokens(promptText),
       completionTokens: payload.usage?.completion_tokens ?? estimateTokens(text),
       cost: 0,
     },
@@ -753,25 +830,78 @@ function livePrompt(ctx: AgentContext, extra?: string): string {
     .join('\n\n')
 }
 
-async function liveAgent(ctx: AgentContext): Promise<NodeOutput> {
-  const json = ctx.agent.role !== 'editor'
-  const result = await callLive(ctx.agent.systemPrompt, livePrompt(ctx), {
-    json,
-    temperature: ctx.agent.temperature,
-  })
-  const parsed = json ? parseJsonText(result.text) : undefined
+function toLiveOutput(ctx: AgentContext, text: string, usage: Usage, json: boolean): NodeOutput {
+  const parsed = json ? parseJsonText(text) : undefined
   const data = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : undefined
   return {
-    text: result.text,
+    text,
     data,
-    markdown: ctx.agent.role === 'writer' || ctx.agent.role === 'editor' ? result.text : undefined,
+    markdown: ctx.agent.role === 'writer' || ctx.agent.role === 'editor' ? text : undefined,
     citations: allCitations(ctx),
-    usage: result.usage,
+    usage,
   }
 }
 
+function parseToolArgs(raw: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(raw || '{}') as unknown
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+async function liveAgent(ctx: AgentContext): Promise<NodeOutput> {
+  const json = ctx.agent.role !== 'editor'
+  const specs = toolsForAgent(ctx.agent)
+  if (specs.length === 0) {
+    const result = await callLive(ctx.agent.systemPrompt, livePrompt(ctx), {
+      json,
+      temperature: ctx.agent.temperature,
+    })
+    return toLiveOutput(ctx, result.text, result.usage, json)
+  }
+
+  const messages: ChatMessage[] = [
+    { role: 'system', content: ctx.agent.systemPrompt },
+    {
+      role: 'user',
+      content: livePrompt(ctx, '需要计算时调用 calculator；需要证据时调用 knowledge_search。工具结果要写进最终回答。'),
+    },
+  ]
+  const calls: ToolCall[] = []
+  let text = ''
+  let usage: Usage = { promptTokens: 0, completionTokens: 0, cost: 0 }
+
+  for (let hop = 0; hop < 3; hop += 1) {
+    // A tool turn must stay free-form; response_format=json_object blocks tool calls on some providers.
+    const result = await callLive('', '', {
+      json: false,
+      temperature: ctx.agent.temperature,
+      messages,
+      tools: openAiTools(specs),
+    })
+    usage = sumUsage([usage, result.usage])
+    if (result.text) text = result.text
+    if (!result.toolCalls?.length) break
+
+    messages.push({ role: 'assistant', content: result.text || null, tool_calls: result.toolCalls })
+    for (const raw of result.toolCalls) {
+      const call = await invokeTool(raw.function.name, parseToolArgs(raw.function.arguments))
+      calls.push({ ...call, id: raw.id })
+      messages.push({
+        role: 'tool',
+        tool_call_id: raw.id,
+        content: JSON.stringify(call.error ? { error: call.error } : call.result).slice(0, 4000),
+      })
+    }
+  }
+
+  return { ...toLiveOutput(ctx, text, usage, json), toolCalls: calls }
+}
+
 async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeOutput> {
-  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output
+  const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output ?? lastMarkdown(ctx)
   const markdown = writer?.markdown ?? writer?.text ?? ''
   try {
     const result = await callLive(
@@ -804,7 +934,43 @@ async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeO
   return mockVerifier(ctx, threshold)
 }
 
+const DEMO_CALC: Record<string, string> = {
+  'agent-analyst': '3200*249/10000',
+  'agent-valuation': '2000*249/10000',
+}
+
+/** Mock mode still executes the real calculator, so the offline demo has a tool trace. */
+async function attachMockTool(ctx: AgentContext, output: NodeOutput): Promise<NodeOutput> {
+  if (output.toolCalls?.some((call) => call.name === 'calculator')) return output
+  if (!toolsForAgent(ctx.agent).some((tool) => tool.name === 'calculator')) return output
+  const expression = DEMO_CALC[ctx.agent.id] ?? '3200*249/10000'
+  const call = await invokeTool('calculator', { expression })
+  return { ...output, toolCalls: [...(output.toolCalls ?? []), call] }
+}
+
 export async function runAgentNode(ctx: AgentContext, threshold: number): Promise<NodeOutput> {
+  const output = await runAgentNodeInner(ctx, threshold)
+  return ctx.mode === 'mock' ? attachMockTool(ctx, output) : output
+}
+
+async function runAgentNodeInner(ctx: AgentContext, threshold: number): Promise<NodeOutput> {
+  // A verifier without the plugin is a verifier that cannot pass a report.
+  if (ctx.agent.role === 'verifier' && !ctx.agent.plugins.includes('verify.citations')) {
+    const verdict: Verdict = {
+      passed: false,
+      score: 0,
+      issues: ['事实核查员未挂载 verify.citations，本次运行按未核查处理。'],
+      routes: [],
+    }
+    return {
+      text: asJson(verdict),
+      data: verdict as unknown as Record<string, unknown>,
+      verdict,
+      score: 0,
+      usage: usageOf(ctx.agent.systemPrompt, asJson(verdict)),
+    }
+  }
+
   if (ctx.agent.role === 'verifier') {
     if (ctx.mode === 'live') return liveVerifier(ctx, threshold)
     return mockVerifier(ctx, threshold)
@@ -812,6 +978,7 @@ export async function runAgentNode(ctx: AgentContext, threshold: number): Promis
 
   if (ctx.agent.role === 'editor') {
     const verdict = ctx.upstream.find((item) => item.nodeId === 'verifier')?.output.verdict
+      ?? [...ctx.upstream].reverse().find((item) => item.output.verdict)?.output.verdict
     if (ctx.mode === 'live') {
       const output = await liveAgent(ctx)
       return { ...output, citations: allCitations(ctx) }
@@ -846,20 +1013,11 @@ export async function runDiverge(
   for (const perspective of perspectives) {
     onBranch(perspective)
     if (ctx.mode === 'live') {
-      const result = await callLive(
-        `${ctx.agent.systemPrompt}\n${perspectivePrompt(perspective)}`,
-        livePrompt(ctx, `当前视角：${perspective}`),
-        { json: true, temperature: 0.6 },
-      )
-      branches.push({
-        name: perspective,
-        output: {
-          text: result.text,
-          data: parseJsonText(result.text) as Record<string, unknown> | undefined,
-          usage: result.usage,
-          citations: allCitations(ctx),
-        },
+      const output = await liveAgent({
+        ...ctx,
+        agent: { ...ctx.agent, systemPrompt: `${ctx.agent.systemPrompt}\n${perspectivePrompt(perspective)}` },
       })
+      branches.push({ name: perspective, output })
     } else {
       const base = mockAnalyst(ctx)
       const candidate = base.candidates?.find((item) =>
@@ -882,15 +1040,18 @@ export async function runDiverge(
     .flatMap((branch) => branch.output.candidates ?? [])
     .filter((candidate, index, array) => array.findIndex((item) => item.id === candidate.id) === index)
   const chosen = candidates.slice().sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0]
+  const toolCalls = branches.flatMap((branch) => branch.output.toolCalls ?? [])
+  const merged: NodeOutput = {
+    ...primary,
+    candidates,
+    chosenId: chosen?.id,
+    judge:
+      primary.judge ??
+      `裁判按证据覆盖、假设可检验性、行动性三项打分，选择「${chosen?.name ?? '稳健情景'}」作为主判断。`,
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+  }
   return {
-    output: {
-      ...primary,
-      candidates,
-      chosenId: chosen?.id,
-      judge:
-        primary.judge ??
-        `裁判按证据覆盖、假设可检验性、行动性三项打分，选择「${chosen?.name ?? '稳健情景'}」作为主判断。`,
-    },
+    output: ctx.mode === 'mock' ? await attachMockTool(ctx, merged) : merged,
     branches,
   }
 }

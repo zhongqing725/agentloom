@@ -3,7 +3,7 @@ import fastifyStatic from '@fastify/static'
 import multipart from '@fastify/multipart'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Mode } from '../shared/types.js'
+import type { EvalCase, KnowledgeDoc, Mode } from '../shared/types.js'
 import {
   activateVersion,
   addDocument,
@@ -22,12 +22,15 @@ import {
   listDocuments,
   listEvalCases,
   listEvents,
+  listChunks,
   listRuns,
   listTrainingRuns,
   listVersions,
   updateAgent,
   updateWorkflow,
+  upsertEvalCase,
 } from './db.js'
+import { extractPdf, looksLikeScannedPdf } from './documents.js'
 import { executeRun, cancelRun } from './engine.js'
 import { executeTraining } from './trainer.js'
 import { runBus } from './bus.js'
@@ -82,11 +85,28 @@ app.post('/api/documents', async (request, reply) => {
     if (!file) return reply.code(400).send({ error: '没有收到文件。' })
     const filename = file.filename || '未命名文档.md'
     const extension = path.extname(filename).toLowerCase()
-    if (!['.md', '.markdown', '.txt'].includes(extension)) {
-      return reply.code(400).send({ error: '当前版本支持 Markdown / TXT；PDF 解析将在后续版本开放。' })
+    if (!['.md', '.markdown', '.txt', '.pdf'].includes(extension)) {
+      return reply.code(400).send({ error: '支持 Markdown / TXT / PDF。' })
     }
     const buffer = await file.toBuffer()
-    const content = buffer.toString('utf8')
+    let content: string
+    if (extension === '.pdf') {
+      try {
+        const extracted = await extractPdf(buffer)
+        if (looksLikeScannedPdf(extracted.text)) {
+          return reply.code(422).send({
+            error: '这个 PDF 没有可提取的文字层（可能是扫描件），请先用 OCR 转成文本再入库。',
+          })
+        }
+        content = extracted.text
+      } catch (cause) {
+        return reply.code(422).send({
+          error: `PDF 解析失败：${cause instanceof Error ? cause.message : String(cause)}`,
+        })
+      }
+    } else {
+      content = buffer.toString('utf8')
+    }
     if (!content.trim()) return reply.code(400).send({ error: '文件内容为空。' })
     const fields = file.fields as Record<string, { value?: string } | undefined>
     const title = fields?.title?.value || filename.replace(/\.[^.]+$/, '')
@@ -95,11 +115,27 @@ app.post('/api/documents', async (request, reply) => {
       .split(/[,，]/)
       .map((tag) => tag.trim())
       .filter(Boolean)
-    const document = addDocument({ title, source, content, tags })
+    const document = addDocument({
+      title,
+      source,
+      content,
+      tags,
+      url: fields?.url?.value || undefined,
+      kind: (fields?.kind?.value || undefined) as KnowledgeDoc['kind'],
+      publishedAt: fields?.published_at?.value || undefined,
+    })
     return reply.code(201).send({ document })
   }
 
-  const body = request.body as { title?: string; source?: string; content?: string; tags?: string[] } | undefined
+  const body = request.body as {
+    title?: string
+    source?: string
+    content?: string
+    tags?: string[]
+    url?: string
+    kind?: KnowledgeDoc['kind']
+    publishedAt?: string
+  } | undefined
   if (!body?.title || !body?.content) {
     return reply.code(400).send({ error: 'title 和 content 不能为空。' })
   }
@@ -108,6 +144,9 @@ app.post('/api/documents', async (request, reply) => {
     source: body.source || '手动录入',
     content: body.content,
     tags: body.tags ?? [],
+    url: body.url,
+    kind: body.kind,
+    publishedAt: body.publishedAt,
   })
   return reply.code(201).send({ document })
 })
@@ -171,6 +210,7 @@ app.put('/api/agents/:id', async (request, reply) => {
     model: typeof body.model === 'string' ? body.model : undefined,
     temperature: typeof body.temperature === 'number' ? body.temperature : undefined,
     systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
+    tools: Array.isArray(body.tools) ? (body.tools as string[]) : undefined,
     plugins: Array.isArray(body.plugins) ? (body.plugins as string[]) : undefined,
   })
   if (!agent) return reply.code(404).send({ error: 'Agent 不存在。' })
@@ -323,6 +363,53 @@ app.post('/api/training/versions/:id/activate', async (request, reply) => {
   const activated = activateVersion(id)
   if (!activated) return reply.code(404).send({ error: '版本不存在。' })
   return { agent: getAgent(activated.agentId), version: activated }
+})
+
+/** Ref prefix per source kind, so a citation shows where it came from. */
+const REF_PREFIX: Record<string, string> = { paper: 'P', report: 'R', news: 'N', filing: 'F', other: 'D' }
+
+/**
+ * Builds eval cases straight from the knowledge base: the document's own chunks
+ * become the frozen evidence, so training runs against real sources instead of
+ * hand-written fixtures.
+ */
+app.post('/api/training/cases/from-docs', async (request, reply) => {
+  const body = request.body as { agentId?: string; docIds?: string[] } | undefined
+  const agentId = body?.agentId
+  const docIds = Array.from(new Set(body?.docIds ?? []))
+  if (!agentId) return reply.code(400).send({ error: 'agentId 不能为空。' })
+  if (docIds.length === 0) return reply.code(400).send({ error: '至少选择一份资料。' })
+  if (!getAgent(agentId)) return reply.code(404).send({ error: 'Agent 不存在。' })
+
+  const documents = listDocuments()
+  const created: EvalCase[] = []
+
+  for (const docId of docIds) {
+    const doc = documents.find((item) => item.id === docId)
+    if (!doc) continue
+    const chunks = listChunks(docId).slice(0, 6)
+    if (chunks.length === 0) continue
+    const prefix = REF_PREFIX[doc.kind ?? 'other'] ?? 'D'
+    const evidence = chunks.map((chunk, index) => ({
+      ref: `${prefix}${index + 1}`,
+      docId: doc.id,
+      docTitle: doc.title,
+      quote: chunk.text,
+      score: 0.9,
+    }))
+    created.push(
+      upsertEvalCase({
+        id: `case-auto-${doc.id}`,
+        agentId,
+        title: `自动生成 · ${doc.title}`,
+        input: `请阅读《${doc.title}》，提炼 3 条可以引用的结论，并为每条结论标注证据编号。`,
+        fixture: { evidence, upstream: [] },
+      }),
+    )
+  }
+
+  if (created.length === 0) return reply.code(400).send({ error: '选中的资料没有可用片段。' })
+  return reply.code(201).send({ cases: created })
 })
 
 if (fs.existsSync(WEB_DIST)) {

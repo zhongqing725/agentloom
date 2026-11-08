@@ -41,8 +41,15 @@ export const api = {
       body: JSON.stringify(input),
     }),
   documents: () => request<{ documents: KnowledgeDoc[] }>('/api/documents'),
-  addDocument: (input: { title: string; source: string; content: string; tags: string[] }) =>
-    request<{ document: KnowledgeDoc }>('/api/documents', { method: 'POST', body: JSON.stringify(input) }),
+  addDocument: (input: {
+    title: string
+    source: string
+    content: string
+    tags: string[]
+    url?: string
+    kind?: string
+    publishedAt?: string
+  }) => request<{ document: KnowledgeDoc }>('/api/documents', { method: 'POST', body: JSON.stringify(input) }),
   uploadDocument: (form: FormData) =>
     request<{ document: KnowledgeDoc }>('/api/documents', { method: 'POST', body: form }),
   deleteDocument: (id: string) => request<{ ok: boolean }>(`/api/documents/${id}`, { method: 'DELETE' }),
@@ -54,6 +61,7 @@ export const api = {
     description?: string
     color?: string
     plugins?: string[]
+    tools?: string[]
     systemPrompt?: string
     temperature?: number
   }) => request<{ agent: Agent }>('/api/agents', { method: 'POST', body: JSON.stringify(input) }),
