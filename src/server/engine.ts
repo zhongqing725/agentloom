@@ -148,11 +148,12 @@ export async function executeRun(runId: string): Promise<void> {
         output: state.output!,
       }))
 
-  const retrieveEvidence = (angle: string, context: string): Evidence[] => {
+  const retrieveEvidence = (angle: string, context: string, plugins: string[]): Evidence[] => {
     const prefix = ANGLE_PREFIX[angle] ?? 'E'
     const preferredDoc = ANGLE_DOC[angle]
     const query = ANGLE_QUERY[angle] ?? `${angle} ${context}`.trim()
-    const hits = searchKnowledge(getDb(), project.id, query, 6, preferredDoc).sort((a, b) => {
+    const db = getDb()
+    const hits = searchKnowledge(db, project.id, query, 10, preferredDoc).sort((a, b) => {
       const ap = a.docId === preferredDoc ? 0 : 1
       const bp = b.docId === preferredDoc ? 0 : 1
       if (ap !== bp) return ap - bp
@@ -160,7 +161,27 @@ export async function executeRun(runId: string): Promise<void> {
       const bi = Number(b.chunkId.split('-c').pop() ?? 0)
       return ai - bi
     })
-    return hits.map((hit, index) => ({
+
+    if (plugins.includes('knowledge.graph')) {
+      const seen = new Set(hits.map((hit) => hit.chunkId))
+      for (const hit of hits.slice(0, 3)) {
+        for (const related of searchKnowledge(db, project.id, hit.text.slice(0, 120), 2)) {
+          if (seen.has(related.chunkId)) continue
+          seen.add(related.chunkId)
+          hits.push(related)
+        }
+      }
+    }
+
+    if (plugins.includes('knowledge.freshness')) {
+      const rows = db
+        .prepare('SELECT id, published_at, created_at FROM documents')
+        .all() as Array<{ id: string; published_at?: string; created_at?: string }>
+      const stamp = new Map(rows.map((row) => [row.id, Date.parse(row.published_at ?? row.created_at ?? '') || 0]))
+      hits.sort((a, b) => (stamp.get(b.docId) ?? 0) - (stamp.get(a.docId) ?? 0))
+    }
+
+    return hits.slice(0, 6).map((hit, index) => ({
       ref: `${prefix}${index + 1}`,
       docId: hit.docId,
       docTitle: hit.docTitle,
@@ -240,6 +261,7 @@ export async function executeRun(runId: string): Promise<void> {
           throw new Error(`预算上限 $${budget} 已用完，调度器停止了后续模型调用。`)
         }
 
+        const knowledgePlugins = agent.plugins.filter((plugin) => plugin.startsWith('knowledge.'))
         const ctx: AgentContext = {
           agent,
           nodeId: node.id,
@@ -247,8 +269,8 @@ export async function executeRun(runId: string): Promise<void> {
           input: run.input,
           upstream: buildUpstream(node.id),
           evidence:
-            agent.role === 'researcher' && agent.plugins.includes('knowledge.retrieve')
-              ? retrieveEvidence(node.data.angle ?? '市场', `${node.data.subtitle ?? ''} ${agent.title}`)
+            knowledgePlugins.length > 0
+              ? retrieveEvidence(node.data.angle ?? '市场', `${node.data.subtitle ?? ''} ${agent.title}`, knowledgePlugins)
               : [],
           feedback: feedback || undefined,
           iteration: state.iteration,

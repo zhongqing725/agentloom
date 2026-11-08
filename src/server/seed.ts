@@ -67,18 +67,18 @@ export const PLUGINS: PluginDef[] = [
   },
   {
     id: 'knowledge.graph',
-    name: '图谱检索',
+    name: '邻居扩展',
     category: '知识',
-    description: '按实体关系召回（供应商 → 环节 → 客户），返回路径而不是零散片段。',
+    description: '从首轮命中出发，补同主题的相邻片段，扩大证据面，而不是只返回孤立结果。',
     icon: 'Network',
     color: '#2F6F6A',
     config: { depth: 2, maxPaths: 6 },
   },
   {
     id: 'knowledge.freshness',
-    name: '时效校验',
+    name: '时效排序',
     category: '知识',
-    description: '标注每条证据的发布日期与半衰期，过期证据自动降权。',
+    description: '按文档发布时间重排证据，新资料优先；没有发布时间的用入库时间。',
     icon: 'Clock',
     color: '#7A6A3B',
     config: { halfLifeDays: 180, penalty: 0.5 },
@@ -105,7 +105,7 @@ export const PLUGINS: PluginDef[] = [
     id: 'verify.numbers',
     name: '数值一致性',
     category: '验证',
-    description: '跨段落核对同一指标，抓口径、单位与统计期间的冲突。',
+    description: '扫描报告中的数字，列出引用原文中找不到对应值的项。',
     icon: 'Ruler',
     color: '#5B5F9E',
     config: { tolerance: 0.02 },
@@ -123,16 +123,16 @@ export const PLUGINS: PluginDef[] = [
     id: 'tool.browser',
     name: '浏览器抓取',
     category: '工具',
-    description: '打开链接、读取正文与表格，回填成可引用的证据。',
+    description: '读取公开 http(s) 页面的标题与正文，拦截内网地址。',
     icon: 'Globe',
     color: '#2F6F6A',
     config: { timeoutMs: 15000, allowlist: [] },
   },
   {
     id: 'tool.python',
-    name: '代码沙箱',
+    name: '数据统计',
     category: '工具',
-    description: '在沙箱里跑 pandas 计算与图表，输出可复现的数值与图。',
+    description: '对一组数字做 mean / median / sum / min / max 统计，不执行任意代码。',
     icon: 'Code',
     color: '#3A3A3A',
     config: { runtime: 'python3', cpuSeconds: 10, memoryMb: 512 },
@@ -153,7 +153,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是产业研究规划师。把用户的研究任务拆成 3 个互补的研究问题，分别覆盖市场、产业链、竞争格局。每个问题要具体、可检索、可验证。同时给出一个可被推翻的初始假设。只输出 JSON。',
     tools: [],
-    plugins: [],
+    plugins: ['cognition.decompose'],
     sort: 1,
   },
   {
@@ -233,7 +233,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是研究报告撰写师。写一份结构清晰的中文研究报告。每个关键结论后用 [M1] 这样的编号标注证据。不要编造没有证据的数字。',
     tools: [],
-    plugins: [],
+    plugins: ['cognition.critique'],
     sort: 6,
   },
   {
@@ -249,7 +249,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是事实核查员。抽取报告中的关键结论和引用，逐条核对证据是否支持结论。输出 JSON：score、passed、claims、issues。',
     tools: [],
-    plugins: ['verify.citations'],
+    plugins: ['verify.citations', 'verify.numbers', 'verify.entailment'],
     sort: 7,
   },
   {
@@ -281,7 +281,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是数据工程师。把多源数据对齐到同一口径、单位与统计期间，标出缺失值与冲突值。只输出 JSON：series、conflicts、assumptions。',
     tools: ['knowledge.retrieve'],
-    plugins: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve', 'knowledge.freshness'],
     sort: 9,
   },
   {
@@ -297,7 +297,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是技术评估专家。评估技术路线的成熟度（TRL）、专利集中度与被替代风险，区分演示与量产。只基于证据回答，输出 JSON。',
     tools: ['knowledge.retrieve'],
-    plugins: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve', 'knowledge.graph'],
     sort: 10,
   },
   {
@@ -312,8 +312,8 @@ export const AGENTS: Agent[] = [
     temperature: 0.2,
     systemPrompt:
       '你是政策与合规研究员。梳理监管、标准、认证与补贴，量化合规对成本与上市时间的影响。只基于证据回答，输出 JSON。',
-    tools: ['knowledge.retrieve'],
-    plugins: ['knowledge.retrieve'],
+    tools: ['knowledge.retrieve', 'tool.browser'],
+    plugins: ['knowledge.retrieve', 'tool.browser'],
     sort: 11,
   },
   {
@@ -328,8 +328,8 @@ export const AGENTS: Agent[] = [
     temperature: 0.3,
     systemPrompt:
       '你是估值分析师。基于研究假设搭建 DCF 与可比公司估值，输出区间、关键假设与敏感性表。数值计算必须调用工具，只输出 JSON。',
-    tools: ['tool.calculator'],
-    plugins: ['tool.calculator'],
+    tools: ['tool.calculator', 'tool.python'],
+    plugins: ['tool.calculator', 'tool.python', 'verify.numbers'],
     sort: 12,
   },
   {
@@ -345,7 +345,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是风险官。为每条结论写出可观察的证伪条件，做极端情景压力测试，标出最脆弱的假设。只输出 JSON。',
     tools: ['knowledge.retrieve'],
-    plugins: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve', 'cognition.strawman'],
     sort: 13,
   },
   {
@@ -361,7 +361,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是访谈整理员。把访谈纪要拆成观点、原话引语与待验证假设，保留说话人角色但不保留姓名。只输出 JSON。',
     tools: ['knowledge.retrieve'],
-    plugins: ['knowledge.retrieve'],
+    plugins: ['knowledge.retrieve', 'cognition.debate'],
     sort: 14,
   },
 ]

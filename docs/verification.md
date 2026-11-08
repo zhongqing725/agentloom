@@ -41,7 +41,7 @@ v2 的薄弱处：`partial` 只有 2 条支持，recall 50%；`contradicted` 召
 `pnpm smoke` 使用临时 SQLite 文件（`AGENTLOOM_DB`），不会污染演示库。它断言：
 
 1. 工具本身：`calculator` 算出 `(1+2)*3/2 = 4.5`，拒绝 `process.exit()`；`knowledge_search` 能命中种子语料。
-2. 一次完整 Mock 运行：状态 `completed`、终稿分数 ≥ 0.9、运行带 graph 快照、至少 1 次 `loop.triggered`、至少 1 次 `tool.call`、报告带引用。
+2. 一次完整 Mock 运行：状态 `completed`、终稿分数 ≥ 0.9、运行带 graph 快照、至少 1 次 `loop.triggered`、至少 1 次 `tool.call`、报告带引用；planner/writer/verifier 分别产出的插件报告也要存在。
 
 当前输出：
 
@@ -105,4 +105,5 @@ pnpm dev
 - 143 条构造集只覆盖三条来源、五类扰动，不能代表开放域。
 - `extractClaims` 只检查含引用或含数字的句子；纯定性主张（“某公司更强”）目前不在核查范围，材料里不要写成“所有结论都被验证”。
 - Mock 模式的 Token 与成本是估算，不是账单。
-- 工具只覆盖 `calculator` 与 `knowledge_search`；浏览器、代码沙箱、MCP 仍未接入。
+- 工具覆盖 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`；`tool.python` 是受限统计，不执行任意代码；MCP 仍未接入。
+- `browser_fetch` 需要外网，Demo 主流程没有默认挂载它。

@@ -96,6 +96,90 @@ const calculator: ToolSpec = {
   },
 }
 
+const dataStats: ToolSpec = {
+  name: 'data_stats',
+  description: '对一组数字做确定性统计（mean / median / sum / min / max），不执行任意代码。',
+  parameters: {
+    type: 'object',
+    properties: {
+      values: { type: 'array', items: { type: 'number' }, description: '待统计的数字' },
+      operation: { type: 'string', enum: ['mean', 'median', 'sum', 'min', 'max'] },
+    },
+    required: ['values'],
+  },
+  run(args) {
+    const values = Array.isArray(args.values)
+      ? args.values.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+      : []
+    if (values.length === 0) throw new Error('values 不能为空。')
+    const operation = String(args.operation ?? 'mean')
+    const sorted = [...values].sort((a, b) => a - b)
+    const sum = values.reduce((total, value) => total + value, 0)
+    const median =
+      sorted.length % 2 === 0
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)]
+    const value =
+      operation === 'sum'
+        ? sum
+        : operation === 'median'
+          ? median
+          : operation === 'min'
+            ? sorted[0]
+            : operation === 'max'
+              ? sorted[sorted.length - 1]
+              : sum / values.length
+    return { operation, count: values.length, value: Number(value.toFixed(4)) }
+  },
+}
+
+function assertPublicHost(url: URL) {
+  // ponytail: hostname-level SSRF guard only; if this ever leaves localhost,
+  // resolve DNS and pin the IP before fetching.
+  const host = url.hostname.toLowerCase()
+  if (
+    host === 'localhost' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    /^127\.|^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  ) {
+    throw new Error('不允许访问本地或内网地址。')
+  }
+}
+
+const browserFetch: ToolSpec = {
+  name: 'browser_fetch',
+  description: '读取一个公开 http(s) 页面的标题与正文，返回可引用文本。',
+  parameters: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: '公开页面 URL' },
+      limit: { type: 'number', description: '最多返回字符数，默认 4000' },
+    },
+    required: ['url'],
+  },
+  async run(args) {
+    const raw = String(args.url ?? '').trim()
+    const url = new URL(raw)
+    if (!/^https?:$/.test(url.protocol)) throw new Error('只支持 http/https。')
+    assertPublicHost(url)
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000), redirect: 'follow' })
+    assertPublicHost(new URL(response.url))
+    if (!response.ok) throw new Error(`页面请求失败：${response.status}`)
+    const html = (await response.text()).slice(0, 400_000)
+    const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim() ?? ''
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const limit = Math.max(200, Math.min(Number(args.limit ?? 4000), 8000))
+    return { url: url.toString(), title, text: text.slice(0, limit) }
+  },
+}
+
 const knowledgeSearch: ToolSpec = {
   name: 'knowledge_search',
   description: '检索当前项目知识库，返回可引用的片段、来源与评分。',
@@ -123,12 +207,16 @@ const knowledgeSearch: ToolSpec = {
 export const TOOL_REGISTRY: Record<string, ToolSpec> = {
   calculator,
   knowledge_search: knowledgeSearch,
+  data_stats: dataStats,
+  browser_fetch: browserFetch,
 }
 
 /** Agent.tools stores plugin ids; only these map to executable tools. */
 const AGENT_TOOL_IDS: Record<string, string> = {
   'tool.calculator': 'calculator',
   'knowledge.retrieve': 'knowledge_search',
+  'tool.python': 'data_stats',
+  'tool.browser': 'browser_fetch',
 }
 
 export function toolsForAgent(agent: Agent): ToolSpec[] {

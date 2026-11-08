@@ -38,7 +38,7 @@ import {
 } from '../components/ui'
 import { WorkflowGraph } from '../components/Graph'
 import { SwarmBuild } from '../components/SwarmBuild'
-import { TOOL_PLUGIN_IDS, type Agent, type GraphNode, type Workflow as WorkflowModel } from '../../shared/types'
+import { RUNTIME_PLUGIN_IDS, TOOL_PLUGIN_IDS, type Agent, type GraphNode, type Workflow as WorkflowModel } from '../../shared/types'
 
 type Graph = WorkflowModel['graph']
 type Notice = { message: string; tone: 'ok' | 'warn' }
@@ -51,8 +51,8 @@ type SpecialistDraft = {
   temperature: number
 }
 
-/** Only plugins with a runtime path are draggable; the rest stay catalog-only. */
-const RUNTIME_PLUGINS = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations', 'tool.calculator'])
+/** Only plugins with a runtime path are draggable. */
+const RUNTIME_PLUGINS = new Set(RUNTIME_PLUGIN_IDS)
 
 /**
  * The preset library behind 「添加 Agent」. Each template carries its own

@@ -142,11 +142,11 @@ AGENTS.md / .cursor/     BoardUI always-on 设计规则
 |---|---|
 | `/` | 首页：14 角色统计、运行入口、最近运行、证据/插件入口 |
 | `/knowledge` | 资料入库（Markdown/TXT/PDF）、检索测试、资料卡、查看/删除 |
-| `/team` | 14 个 Agent、能力插件库、模型/温度/Prompt、插件 Switch（目录态禁用） |
+| `/team` | 14 个 Agent、能力插件库、模型/温度/Prompt、插件 Switch |
 | `/workflow` | React Flow 画布、拖拽/连线/删除、添加 Agent、插件拖放、检查器 |
 | `/runs/:id` | 执行图谱、研究报告、证据账本、核查与回环、事件流（含 tool.call） |
 | `/evals` | 累计指标、回环前后对比、全部运行历史 |
-| `/plugins` | 14 个插件、4 个可运行、挂载状态 |
+| `/plugins` | 14 个插件、全部可运行、挂载状态 |
 | `/training` | 固定评测集、候选提示词、版本启用/回滚 |
 
 运行页五个标签由 BoardUI `Tabs` 的 segmented 变体提供；移动端导航由 BoardUI `Modal` 提供抽屉形态。
@@ -223,7 +223,7 @@ pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 8. **提交材料仍是 11/5 版式**：数字与“工具运行时/四态核查”附录已在 11/8 补进 DOCX/PPTX/PDF，但截图仍是旧界面，团队信息仍是占位；提交前用 `.screens/` 新截图重新导出并替换团队信息。
 9. **团队信息**：白皮书/PPT 里的团队名称、成员仍是占位符，提交前替换。
 10. **当前分支未合并**：已提交 `98fe560`，但 `ui/swiss-redesign` 尚未合并到 `main`；比赛提交前确认提交点与构建来源。
-11. **工具边界**：只有 `calculator` 与 `knowledge_search`；没有 MCP、浏览器、代码沙箱。评委若问“工具生态”，如实说明这是下一阶段。
+11. **工具边界**：已有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`；`tool.python` 是受限统计，不执行任意代码；MCP 是下一阶段。`browser_fetch` 需要外网。
 12. **单工作流**：只有一张演示工作流，没有多项目/多工作流选择；平台化叙事不要超过实现。
 
 ## 11. 交接检查清单

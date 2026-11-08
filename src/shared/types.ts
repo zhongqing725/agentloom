@@ -146,7 +146,25 @@ export interface Candidate {
 }
 
 /** Plugin ids that map to an executable tool; keep in sync with server/tools.ts. */
-export const TOOL_PLUGIN_IDS: string[] = ['tool.calculator', 'knowledge.retrieve']
+export const TOOL_PLUGIN_IDS: string[] = ['tool.calculator', 'tool.python', 'tool.browser', 'knowledge.retrieve']
+
+/** Every plugin with a runtime path. */
+export const RUNTIME_PLUGIN_IDS: string[] = [
+  'knowledge.retrieve',
+  'knowledge.graph',
+  'knowledge.freshness',
+  'cognition.diverge',
+  'cognition.critique',
+  'cognition.decompose',
+  'cognition.strawman',
+  'cognition.debate',
+  'verify.citations',
+  'verify.numbers',
+  'verify.entailment',
+  'tool.calculator',
+  'tool.python',
+  'tool.browser',
+]
 
 /** One executed tool call, kept on the node output so the trace is replayable. */
 export interface ToolCall {
@@ -171,6 +189,7 @@ export interface NodeOutput {
   judge?: string
   feedback?: string
   toolCalls?: ToolCall[]
+  pluginReports?: Array<{ id: string; title: string; text: string }>
 }
 
 export interface Run {

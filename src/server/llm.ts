@@ -934,22 +934,172 @@ async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeO
   return mockVerifier(ctx, threshold)
 }
 
+const COGNITION_PLUGINS = new Set([
+  'cognition.diverge',
+  'cognition.critique',
+  'cognition.decompose',
+  'cognition.strawman',
+  'cognition.debate',
+])
+const VERIFY_PLUGINS = new Set(['verify.citations', 'verify.numbers', 'verify.entailment'])
+const KNOWLEDGE_PLUGINS = new Set(['knowledge.graph', 'knowledge.freshness'])
+
+const PLUGIN_TITLES: Record<string, string> = {
+  'cognition.diverge': '发散思考',
+  'cognition.critique': '自我批判',
+  'cognition.decompose': '任务分解',
+  'cognition.strawman': '反方建模',
+  'cognition.debate': '多角色辩论',
+  'verify.citations': '引用核验',
+  'verify.numbers': '数值一致性',
+  'verify.entailment': '蕴含判定',
+  'knowledge.graph': '邻居扩展',
+  'knowledge.freshness': '时效排序',
+}
+
+const PLUGIN_PROMPTS: Record<string, string> = {
+  'cognition.critique': '对上面的输出做一轮自我批判：指出证据缺口、逻辑跳跃与过度断言。不要改事实。',
+  'cognition.decompose': '把当前任务拆成 3 个可并行执行的子任务，标出依赖关系。',
+  'cognition.strawman': '生成 3 条最强的反方论证，并为每条写出可观察的证伪条件。',
+  'cognition.debate': '让正方和反方各给 2 条论据，再由裁判提炼共识与分歧。',
+  'cognition.diverge': '从稳健、进取、反方三个视角各给一条判断，并说明差异。',
+}
+
+function numericAudit(markdown: string, citations: Citation[]): string[] {
+  const known = new Set(citations.flatMap((citation) => numbersIn(citation.quote)))
+  return [...new Set(numbersIn(markdown))].filter((number) => !known.has(number))
+}
+
+function mockPluginText(ctx: AgentContext, id: string, output: NodeOutput): string {
+  const upstreamReport = [...ctx.upstream].reverse().find((item) => item.output.markdown)?.output.markdown
+  const markdown = output.markdown ?? (ctx.agent.role === 'verifier' ? upstreamReport ?? '' : output.text ?? '')
+  const citations = allCitations(ctx)
+  const verdict = output.verdict ?? deterministicVerdict(markdown, citations, 0.9)
+  if (id === 'cognition.decompose') {
+    const task = ctx.input.slice(0, 40)
+    return [
+      `1. 事实收集：围绕「${task}」检索市场、产业链与竞争证据。`,
+      '2. 交叉分析：对齐口径、单位与统计期间，标出冲突项。',
+      '3. 结论与核验：形成主张，交给核查员逐条验证。',
+    ].join('\n')
+  }
+  if (id === 'cognition.strawman') {
+    return [
+      '反方 1：需求端没有形成刚需，出货增长可能来自渠道压货。证伪条件：退货率连续两个季度高于 15%。',
+      '反方 2：价格战会先压缩整机毛利，再向上游传导。证伪条件：上游毛利率同步下滑超过 5 个百分点。',
+      '反方 3：手机厂商用配件逻辑定价，创业公司失去独立价格带。证伪条件：主流价位跌破 999 元。',
+    ].join('\n')
+  }
+  if (id === 'cognition.debate') {
+    return [
+      '正方：渗透率仍低，2026—2028 是放量窗口；光学与低功耗 SoC 先受益。',
+      '反方：留存与退货率没有验证，当前增长更依赖渠道补贴；估值已隐含高增长。',
+      '裁判：方向成立，但必须把“退货率下降”作为加仓前提，并保留反方情景。',
+    ].join('\n')
+  }
+  if (id === 'cognition.diverge') {
+    return [
+      '稳健：优先配置确定性更高的上游，等待留存数据验证。',
+      '进取：如果 AI 助手成为入口，整机与渠道弹性最大。',
+      '反方：重量、续航与隐私限制需求，增速可能低于预期。',
+    ].join('\n')
+  }
+  if (id === 'knowledge.graph') {
+    return `图谱扩展召回：在 ${citations.length} 条证据的基础上补充了同主题邻居片段，共 ${ctx.evidence.length} 条证据可引用。`
+  }
+  if (id === 'knowledge.freshness') {
+    return `时效排序：按文档发布时间重排 ${ctx.evidence.length} 条证据，越新的资料优先级越高。`
+  }
+  if (id === 'verify.numbers') {
+    const missing = numericAudit(markdown, citations)
+    return missing.length > 0
+      ? `发现 ${missing.length} 个数字不在引用原文中：${missing.slice(0, 8).join('、')}。建议回查口径与单位。`
+      : '报告中出现的数字均能在引用原文中找到对应值。'
+  }
+  if (id === 'verify.entailment') {
+    const claims = verdict.claims ?? []
+    const counts = { supported: 0, partial: 0, contradicted: 0, unsupported: 0 }
+    for (const claim of claims) counts[claim.label ?? (claim.supported ? 'supported' : 'unsupported')] += 1
+    return `逐条判定 ${claims.length} 条主张：支持 ${counts.supported}、部分 ${counts.partial}、矛盾 ${counts.contradicted}、无依据 ${counts.unsupported}。`
+  }
+  if (id === 'verify.citations') {
+    return `引用核验：${citations.length} 条证据，支持率 ${Math.round(verdict.score * 100)}%，问题 ${verdict.issues.length} 条。`
+  }
+  // cognition.critique
+  const weak = (verdict.claims ?? []).filter((claim) => !claim.supported).slice(0, 3)
+  if (weak.length === 0) return '未发现明显证据缺口；建议补充第二来源，避免单一来源支撑关键判断。'
+  return weak.map((claim) => `待补强：${claim.reason}「${claim.claim.slice(0, 48)}…」`).join('\n')
+}
+
+async function livePluginText(ctx: AgentContext, id: string, output: NodeOutput): Promise<string> {
+  const prompt = PLUGIN_PROMPTS[id]
+  if (!prompt) return ''
+  const result = await callLive(
+    `${ctx.agent.systemPrompt}\n${prompt}`,
+    `${livePrompt(ctx)}\n\n当前输出：\n${(output.markdown ?? output.text ?? '').slice(0, 6000)}`,
+    { json: false, temperature: 0.4 },
+  )
+  return result.text
+}
+
+/** Applies every mounted cognition/verification plugin after the base node output. */
+async function applyPlugins(ctx: AgentContext, output: NodeOutput): Promise<NodeOutput> {
+  const ids = ctx.agent.plugins.filter(
+    (id) => COGNITION_PLUGINS.has(id) || VERIFY_PLUGINS.has(id) || KNOWLEDGE_PLUGINS.has(id),
+  )
+  if (ids.length === 0) return output
+
+  const added: Array<{ id: string; title: string; text: string }> = []
+  for (const id of ids) {
+    // The analyst's diverge path already produced real branches.
+    if (id === 'cognition.diverge' && (output.candidates?.length ?? 0) > 0) continue
+    const text =
+      ctx.mode === 'live' && COGNITION_PLUGINS.has(id)
+        ? await livePluginText(ctx, id, output)
+        : mockPluginText(ctx, id, output)
+    if (text) added.push({ id, title: PLUGIN_TITLES[id] ?? id, text })
+  }
+  if (added.length === 0) return output
+
+  const next: NodeOutput = {
+    ...output,
+    pluginReports: [...(output.pluginReports ?? []), ...added],
+  }
+  if (ctx.agent.role !== 'verifier' && (next.markdown || next.text)) {
+    const sections = added.map((report) => `## ${report.title}\n\n${report.text}`).join('\n\n')
+    next.markdown = `${next.markdown ?? next.text}\n\n${sections}`
+  }
+  return next
+}
+
 const DEMO_CALC: Record<string, string> = {
   'agent-analyst': '3200*249/10000',
   'agent-valuation': '2000*249/10000',
 }
 
-/** Mock mode still executes the real calculator, so the offline demo has a tool trace. */
+/** Mock mode still executes the real tools, so the offline demo has a tool trace. */
 async function attachMockTool(ctx: AgentContext, output: NodeOutput): Promise<NodeOutput> {
-  if (output.toolCalls?.some((call) => call.name === 'calculator')) return output
-  if (!toolsForAgent(ctx.agent).some((tool) => tool.name === 'calculator')) return output
-  const expression = DEMO_CALC[ctx.agent.id] ?? '3200*249/10000'
-  const call = await invokeTool('calculator', { expression })
-  return { ...output, toolCalls: [...(output.toolCalls ?? []), call] }
+  const specs = toolsForAgent(ctx.agent).map((tool) => tool.name)
+  const calls = [...(output.toolCalls ?? [])]
+  if (specs.includes('calculator') && !calls.some((call) => call.name === 'calculator')) {
+    const expression = DEMO_CALC[ctx.agent.id] ?? '3200*249/10000'
+    calls.push(await invokeTool('calculator', { expression }))
+  }
+  if (specs.includes('data_stats') && !calls.some((call) => call.name === 'data_stats')) {
+    const values = [...new Set(allCitations(ctx).flatMap((citation) => numbersIn(citation.quote)))]
+      .map(Number)
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .slice(0, 8)
+    if (values.length > 0) calls.push(await invokeTool('data_stats', { values, operation: 'mean' }))
+  }
+  if (specs.includes('browser_fetch') && !calls.some((call) => call.name === 'browser_fetch')) {
+    calls.push(await invokeTool('browser_fetch', { url: 'https://example.com', limit: 600 }))
+  }
+  return calls.length === (output.toolCalls?.length ?? 0) ? output : { ...output, toolCalls: calls }
 }
 
 export async function runAgentNode(ctx: AgentContext, threshold: number): Promise<NodeOutput> {
-  const output = await runAgentNodeInner(ctx, threshold)
+  const output = await applyPlugins(ctx, await runAgentNodeInner(ctx, threshold))
   return ctx.mode === 'mock' ? attachMockTool(ctx, output) : output
 }
 
@@ -1050,8 +1200,9 @@ export async function runDiverge(
       `裁判按证据覆盖、假设可检验性、行动性三项打分，选择「${chosen?.name ?? '稳健情景'}」作为主判断。`,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
   }
+  const withPlugins = await applyPlugins(ctx, merged)
   return {
-    output: ctx.mode === 'mock' ? await attachMockTool(ctx, merged) : merged,
+    output: ctx.mode === 'mock' ? await attachMockTool(ctx, withPlugins) : withPlugins,
     branches,
   }
 }

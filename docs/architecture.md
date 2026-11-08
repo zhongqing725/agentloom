@@ -128,17 +128,24 @@ hooks:
 
 ### 4.2 当前实现
 
-| 插件 | 状态 | 运行时行为 |
-|---|---|---|
-| `cognition.diverge` | 已实现 | 分析师节点展开稳健/进取/反方，裁判按分数选择主判断 |
-| `verify.citations` | 已实现 | 核查员抽取结论，做四态判定；未挂载则 fail-closed，分数为 0 |
-| `knowledge.retrieve` | 已实现 | 研究员按角度检索目标文档；同时作为 `knowledge_search` 工具 |
-| `tool.calculator` | 已实现 | 沙箱算术，调用写入 `tool.call` / `tool.result` |
-| `cognition.critique` | 目录态 | 只出现在团队页，标“目录态”，不可挂载 |
-| `cognition.debate` | 目录态 | 正反辩论 + 裁判提炼 |
-| `tool.browser` / `tool.python` | 目录态 | 浏览器与代码沙箱，未接入 |
+| 插件 | 运行时行为 |
+|---|---|
+| `knowledge.retrieve` | 按角度做 BM25 检索；同时作为 `knowledge_search` 工具 |
+| `knowledge.graph` | 在首轮命中后补同主题邻居片段，扩大证据面 |
+| `knowledge.freshness` | 按文档 `published_at` / `created_at` 重排证据 |
+| `cognition.diverge` | 分析师节点展开稳健/进取/反方，裁判按分数选择主判断；其他节点追加三视角摘要 |
+| `cognition.critique` | 输出后追加证据缺口与逻辑跳跃清单 |
+| `cognition.decompose` | 输出后追加 3 个可并行子任务与依赖 |
+| `cognition.strawman` | 追加 3 条反方论证与证伪条件 |
+| `cognition.debate` | 追加正反论据与裁判纪要 |
+| `verify.citations` | 核查员做四态判定；未挂载则 fail-closed，分数为 0 |
+| `verify.numbers` | 扫描报告数字，列出引用中找不到对应值的项 |
+| `verify.entailment` | 汇总 supported/partial/contradicted/unsupported |
+| `tool.calculator` | 沙箱算术，调用写入 `tool.call` / `tool.result` |
+| `tool.python` | 受限 `data_stats` 统计（mean/median/sum/min/max），不执行任意代码 |
+| `tool.browser` | `browser_fetch` 公开页面抓取，拦截内网地址，8 秒超时 |
 
-“目录态”插件会出现在插件库和节点配置里，但画布只允许拖拽四个运行时插件，不伪装成已实现能力。
+认知/验证插件的产出写入 `NodeOutput.pluginReports`，运行页节点弹窗可查看；写给报告时追加在证据索引之后，不干扰核查范围。
 
 ### 4.3 发散与裁判
 
@@ -154,12 +161,14 @@ hooks:
 
 ### 4.4 工具运行时
 
-`Agent.tools` 存的是插件 id，`src/server/tools.ts` 只把其中两个映射成可执行工具：
+`Agent.tools` 存的是插件 id，`src/server/tools.ts` 把四个映射成可执行工具：
 
 | id | 工具 | 输入 | 实现 |
 |---|---|---|---|
 | `tool.calculator` | `calculator` | `{ expression }` | 递归下降解析，只接受数字与 `+ - * / ( )`，不走 `eval` |
 | `knowledge.retrieve` | `knowledge_search` | `{ query, limit }` | 复用 BM25，返回片段、来源与评分 |
+| `tool.python` | `data_stats` | `{ values, operation }` | 受限统计，不执行任意代码 |
+| `tool.browser` | `browser_fetch` | `{ url, limit }` | 公开 http(s) 页面抓取，拦截 localhost/内网，8 秒超时 |
 
 - **Live**：把工具 JSON Schema 通过 OpenAI `tools` 协议下发；模型返回 `tool_calls` 后本地执行，最多 3 跳，结果以 `role=tool` 回填。
 - **Mock**：直接调用同一个 `invokeTool`，保证离线演示也有真实工具轨迹。
@@ -259,7 +268,7 @@ Live 模式会优先让模型核查，解析失败时回退到同一套规则核
 
 ## 11. 下一步
 
-1. **MCP / 外部工具**：把工具注册表扩成 MCP 客户端，接浏览器、代码沙箱与第三方 API；每个工具声明权限与超时。
+1. **MCP / 外部工具**：把工具注册表扩成 MCP 客户端，接第三方 API；每个工具声明权限与超时。
 2. **Agent-as-Tool**：把每个 Agent 暴露成可调用工具，让规划师在运行时决定调用哪个专家，而不是画布上预先连死。
 3. **多工作流**：项目级工作流选择与模板库，支持软件交付、客服、政策研究等第二场景。
 4. **实验平台**：单分支 vs 多视角的自动化 A/B，把质量、延迟、Tokens 写成报告。

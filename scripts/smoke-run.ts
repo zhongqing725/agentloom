@@ -57,6 +57,12 @@ try {
   assert.ok(toolCalls.length >= 1, 'at least one tool call should execute')
   assert.match(run.output ?? '', /\[[A-Z]\d+\]/, 'final report should carry citations')
 
+  const latestNode = (nodeId: string) =>
+    detail.nodes.filter((node) => node.nodeId === nodeId).sort((a, b) => a.iteration - b.iteration).at(-1)
+  assert.ok(latestNode('planner')?.output?.pluginReports?.some((report) => report.id === 'cognition.decompose'), 'planner should run 任务分解')
+  assert.ok(latestNode('writer')?.output?.pluginReports?.some((report) => report.id === 'cognition.critique'), 'writer should run 自我批判')
+  assert.ok((latestNode('verifier')?.output?.pluginReports?.length ?? 0) >= 3, 'verifier should run its three verification plugins')
+
   console.log(
     `smoke ok · score=${run.score} · loops=${loops.length} · tools=${toolCalls.length} · tokens=${run.tokens}`,
   )

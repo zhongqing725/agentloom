@@ -544,15 +544,15 @@ export default function Home({ onOpenSettings }: { onOpenSettings?: () => void }
             <article className="lm-card lm-glass" data-tilt id="plugins" onClick={() => navigate('/plugins')}>
               <div className="lm-card-kicker">Plugins</div>
               <h3>插件生态</h3>
-              <p>知识检索、数值计算、引用核查、发散思考已经接入运行时；浏览器与沙箱仍是目录态。</p>
+              <p>14 个能力插件都已接入运行时：检索、图谱、时效、发散、辩论、核验、计算与浏览器抓取。</p>
               <div className="lm-card-art">
                 <div className="lm-plugins">
                   <span className="lm-plugin on">知识检索</span>
-                  <span className="lm-plugin on">数值计算</span>
-                  <span className="lm-plugin on">引用核查</span>
+                  <span className="lm-plugin on">邻居扩展</span>
                   <span className="lm-plugin on">发散思考</span>
-                  <span className="lm-plugin">浏览器 · 目录</span>
-                  <span className="lm-plugin">沙箱 · 目录</span>
+                  <span className="lm-plugin on">多角色辩论</span>
+                  <span className="lm-plugin on">引用核验</span>
+                  <span className="lm-plugin on">浏览器抓取</span>
                 </div>
               </div>
             </article>

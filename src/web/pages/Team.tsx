@@ -16,7 +16,7 @@ import { SwitchCard } from '@/components/base/switch/switch-card'
 import { Textarea } from '@/components/base/textarea/textarea'
 import { cx } from '@/utils/cx'
 import { Modal, PageHeader, PluginIcon, SectionHead, Surface } from '../components/ui'
-import { TOOL_PLUGIN_IDS, type Agent } from '../../shared/types'
+import { RUNTIME_PLUGIN_IDS, TOOL_PLUGIN_IDS, type Agent } from '../../shared/types'
 
 const ROLE_LABEL: Record<string, string> = {
   planner: '规划',
@@ -28,7 +28,7 @@ const ROLE_LABEL: Record<string, string> = {
   specialist: '专家',
 }
 
-const IMPLEMENTED = new Set(['knowledge.retrieve', 'cognition.diverge', 'verify.citations', 'tool.calculator'])
+const IMPLEMENTED = new Set(RUNTIME_PLUGIN_IDS)
 
 export default function Team() {
   const { data, refresh } = useApp()

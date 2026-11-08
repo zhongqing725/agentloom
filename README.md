@@ -33,7 +33,10 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 - `verify.citations`：逐条核对结论与证据，不通过就触发 Self-Loop。
 - `knowledge.retrieve`：从项目知识库召回证据，并作为 `knowledge_search` 工具执行。
 - `tool.calculator`：沙箱算术工具，派生数字必须经过它，调用会写入事件流。
-- `cognition.critique` / `cognition.debate` / `tool.browser` / `tool.python`：目录态，界面标注“目录态”，不参与运行时。
+- `cognition.critique` / `decompose` / `strawman` / `debate`：在输出后追加自我批判、任务分解、反方论证或辩论纪要。
+- `knowledge.graph` / `knowledge.freshness`：图谱邻居扩展与按发布时间重排证据。
+- `verify.numbers` / `verify.entailment`：数值一致性审计与四态蕴含统计。
+- `tool.python`（受限数据统计）/ `tool.browser`（公开页面抓取）：真实工具，不执行任意代码。
 
 工具运行时只做三件事：把 `Agent.tools` 里的 id 映射到工具注册表；Live 模式把同一份 JSON Schema 交给模型的 function calling；Mock 模式直接执行工具，保证离线演示也有真实的 `tool.call` / `tool.result` 轨迹。
 
@@ -53,12 +56,14 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 - 默认 10 个节点的 DAG：输入 → 规划 → 三路并行研究 → 分析 → 写作 → 核查 → 终稿；团队库共 14 个角色，未上画布的可从「添加 Agent → 团队库」直接插入。
 - 节点可拖动、连线、删除；位置自动保存。
 - 添加专家节点：插入“风险审查员/数据可视化师/合规审查员”，自动接到下游。
-- 只有已接入运行时的插件可拖拽；目录态插件在团队页标注，不会被误挂。
+- 14 个插件都有服务端运行时：知识插件改变检索，认知/验证插件追加产出，工具插件进入 function calling。
 
 ### 3. 工具运行时
 
 - `calculator`：递归下降解析，只接受数字与 `+ - * / ( )`，不走 `eval`；测试覆盖恶意输入。
 - `knowledge_search`：复用 BM25，返回片段、来源与评分。
+- `data_stats`：受限统计工具（mean / median / sum / min / max），不执行任意代码。
+- `browser_fetch`：公开 http(s) 页面抓取，拦截 localhost/内网地址，8 秒超时。
 - Live 模式走 OpenAI `tools` 协议，最多 3 跳；Mock 模式照样执行真工具。
 - 每次调用写入 `tool.call` / `tool.result` 事件，运行页与节点输出都可回放。
 
@@ -155,7 +160,7 @@ Live 模式下，`Agent.tools` 里的工具会以 OpenAI `tools` 协议下发给
 │  └─────────────┘  └─────────────┘  └─────────────────┘   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐   │
 │  │ Agent Nodes │  │ Plugins     │  │ Verifier        │   │
-│  │ 14 roles    │  │ 4 runtime   │  │ 四态蕴含        │   │
+│  │ 14 roles    │  │ 14 runtime  │  │ 四态蕴含        │   │
 │  └─────────────┘  └─────────────┘  └─────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐  │
 │  │ Tool Registry  calculator / knowledge_search        │  │
@@ -231,8 +236,8 @@ postcss.config.mjs Tailwind v4 PostCSS 配置
 
 ## 当前边界
 
-- 工具运行时已接入 `calculator` 与 `knowledge_search`；`tool.browser` / `tool.python` / MCP 客户端是下一步，不在本届 MVP。
-- 插件目录里的“辩论 / 自我批判 / 图谱检索”等仍是目录态，界面会标注，运行时不会假装执行。
+- 14 个插件都有运行时；工具侧有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`。`tool.python` 是受限统计，不执行任意代码；MCP 客户端是下一步。
+- `browser_fetch` 需要外网，且只允许公开 http(s) 地址；Demo 里默认不挂到主流程，避免现场网络抖动。
 - 知识库支持 Markdown / TXT / PDF；扫描件没有文字层会被拒绝，OCR 不在范围内。
 - 当前只有一张演示工作流；多项目、多工作流选择、认证、多租户、插件市场不在本届 MVP。
 - Mock 模式的 Token 与成本为模拟计量，用于演示口径；`pnpm smoke` 使用临时库，不会污染演示数据。

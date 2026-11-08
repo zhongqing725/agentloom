@@ -863,10 +863,29 @@ export default function RunPage() {
 
 function NodeOutputView({ node }: { node: NodeRun }) {
   const calls = node.output?.toolCalls ?? []
+  const reports = node.output?.pluginReports ?? []
   return (
     <div className="flex flex-col gap-4">
       {calls.length > 0 && <ToolTrace calls={calls} />}
+      {reports.length > 0 && <PluginReports reports={reports} />}
       {renderNodeBody(node.output)}
+    </div>
+  )
+}
+
+function PluginReports({ reports }: { reports: NonNullable<NodeRun['output']>['pluginReports'] }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-[14px] border border-separator-border bg-background-secondary-default p-3">
+      <div className="flex items-center justify-between">
+        <span className="t-label">插件产出</span>
+        <span className="font-mono text-[10px] text-text-tertiary">{reports?.length ?? 0}</span>
+      </div>
+      {reports?.map((report) => (
+        <div key={report.id} className="rounded-[10px] bg-background-primary-default p-2.5">
+          <div className="text-[11px] font-medium text-text-primary">{report.title}</div>
+          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-text-secondary">{report.text}</p>
+        </div>
+      ))}
     </div>
   )
 }

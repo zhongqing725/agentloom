@@ -6,12 +6,22 @@ import { Button } from '@/components/base/buttons/button'
 import { Chip } from '@/components/base/badges/chip'
 import { PageHeader, Surface } from '../components/ui'
 
-/** Only these plugins have a runtime behind them; the rest are catalog-only. */
+/** Every plugin has a server-side runtime; the value is the short capability label. */
 const RUNTIME: Record<string, string> = {
   'knowledge.retrieve': 'BM25 检索',
+  'knowledge.graph': '邻居扩展',
+  'knowledge.freshness': '时效排序',
   'cognition.diverge': '发散生成',
+  'cognition.critique': '自我批判',
+  'cognition.decompose': '任务分解',
+  'cognition.strawman': '反方建模',
+  'cognition.debate': '多角色辩论',
   'verify.citations': '引用核查',
+  'verify.numbers': '数值一致性',
+  'verify.entailment': '蕴含判定',
   'tool.calculator': '数值计算',
+  'tool.python': '数据统计',
+  'tool.browser': '浏览器抓取',
 }
 
 const CATEGORIES = ['知识', '认知', '验证', '工具'] as const
