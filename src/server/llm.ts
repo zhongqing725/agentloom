@@ -746,7 +746,7 @@ function citationFor(sentence: string, docId: string, docTitle: string, citation
   return citation
 }
 
-const amount = (value: string, unit: string) => (unit === '%' ? `${value}%` : `${value} ${unit}`)
+const quoteLine = (fact: WikiFact) => `${fact.sentence.replace(/[。；]\s*$/, '')} [`
 
 /** Round 2 fills coverage gaps and states conflicting figures with their sources. */
 function buildWikiSupplement(ctx: AgentContext, markdown: string): { block: string; citations: Citation[] } {
@@ -754,14 +754,18 @@ function buildWikiSupplement(ctx: AgentContext, markdown: string): { block: stri
   const citations = allCitations(ctx)
   const minted: Citation[] = []
   const lines: string[] = []
+  const seen = new Set<string>()
+  const push = (line: string) => {
+    if (seen.has(line)) return
+    seen.add(line)
+    lines.push(line)
+  }
 
   for (const item of coverageCheck(markdown, ctx.wiki.facts).missing) {
     const fact = ctx.wiki.facts.find((entry) => entry.id === item.factId)
     if (!fact) continue
     const ref = citationFor(fact.sentence, fact.docId, fact.docTitle, citations, minted)
-    lines.push(
-      `${item.metric}${item.subject ? `（${item.subject}）` : ''}：${item.year ? `${item.year} 年 ` : ''}${amount(item.value, item.unit)} [${ref.id}]。`,
-    )
+    push(`${quoteLine(fact)}${ref.id}]。`)
   }
 
   for (const item of conflictCheck(markdown, ctx.wiki.conflicts).unhandled) {
@@ -777,12 +781,8 @@ function buildWikiSupplement(ctx: AgentContext, markdown: string): { block: stri
     const secondary = facts.find((fact) => fact !== primary) ?? facts[1]
     const primaryRef = citationFor(primary.sentence, primary.docId, primary.docTitle, citations, minted)
     const secondaryRef = citationFor(secondary.sentence, secondary.docId, secondary.docTitle, citations, minted)
-    lines.push(
-      `${item.metric}${item.subject ? `（${item.subject}）` : ''}：${amount(primary.value, item.unit)} [${primaryRef.id}]。`,
-    )
-    lines.push(
-      `另有机构的${item.metric}为 ${amount(secondary.value, item.unit)}，两家口径存在差异 [${secondaryRef.id}]。`,
-    )
+    push(`${quoteLine(primary)}${primaryRef.id}]。`)
+    push(`${secondary.sentence.replace(/[。；]\s*$/, '')}，两家口径存在差异 [${secondaryRef.id}]。`)
   }
 
   if (lines.length === 0) return { block: '', citations: [] }

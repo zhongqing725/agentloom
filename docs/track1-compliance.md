@@ -20,12 +20,14 @@
 | RAG / 知识库 | Markdown/TXT/PDF 入库、BM25、引用编号 | 知识库页、`/api/kb/search` | 无 OCR |
 | 向量检索 | SQLite `chunk_vectors` + 哈希向量，BM25 混合排序；配置 embedding 后升级神经向量 | `vectorScore`、`ensureVectors` | 默认哈希；神经路径需 embedding API |
 | 结果验证 | 四态判定 + 数字/方向/单位/期间/主体锚点 + 证据账本 | 42 条手标 88%、supported F1 100% | partial/contradicted 召回仍有限 |
+| 覆盖与冲突核验 | 知识库规则编译成三页事实卡；检查关键事实覆盖、资料口径冲突；三维度均达标才通过 | `/api/wiki`、`verify.coverage`、`scripts/wiki-probe.ts`；线上 `run-91bc6a30`：86%/71%/0% → 100%/100%/100% | 只处理有数字的陈述；语料无冲突时该维为 100% |
 | 交叉验证/置信度 | 有基准比对；无多 Agent 交叉验证/校准置信度 | `docs/verification.md` | 加分项缺口 |
 | 人工验证节点 | 运行可暂停/继续；每个节点完成写 checkpoint | `POST /api/runs/:id/pause`、`/resume`、`GET /api/runs/:id/checkpoints` | 没有正式审批表单/回滚到任意 checkpoint |
 | 反馈优化 | Self-Loop 路由 + 提示词训练/版本回滚 | 运行回环、`/api/training` | 工具选择不会自适应 |
 | 执行监控/回放 | SSE、事件流、节点轨迹、图快照、工具调用、checkpoint | 运行页五标签 | 无断点续跑/回滚 |
 | 性能/压力 | Mock 并发 8 次 + 串行 4 次，p50/p95/成功率 | `docs/stress-report.md` | 真实模型待 Live 复跑 |
 | Live 模型证据 | 真实模型 3/3 通过：`run-56f27e37`、`run-8eebae66`、`run-c6d116ac` 均 1.0（0 条越证断言，3–8 条显式缺口），142–328 秒、$0.043–0.071、20–44 次工具调用 | `docs/live-evidence.md` | 核查分=断言主张的引用支持率，已声明缺口不计入分母；断言数为 0 直接判 0 分 |
+| Mock 三维证据 | `run-91bc6a30`：第 1 轮 86%/71%/0%，9 条问题；回环 `conflict → 首席分析师`；第 2 轮 100%/100%/100%，0 条问题 | `GET /api/runs/run-91bc6a30` | 线上 Mock 演示实例，可由评委自行重跑 |
 
 ## 复跑命令
 

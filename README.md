@@ -6,6 +6,9 @@
 
 它不只是把几个 Agent 串起来，而是把“团队怎么组、每个节点会用什么工具、结果怎么验”变成可配置、可观察、可回放的运行时能力。
 
+> **在线演示**：<http://103.68.192.80/>（Mock 模式，7 篇资料 / 15 个插件；无需登录，可直接跑一次完整回环）
+> 源码：<https://github.com/zhongqing725/agentloom>
+
 > 交接请先读 [docs/handover.md](docs/handover.md)；文档导航见 [docs/README.md](docs/README.md)。
 
 ![首页](docs/boardui/desktop/01-home.png)
@@ -56,7 +59,7 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 - 默认 10 个节点的 DAG：输入 → 规划 → 三路并行研究 → 分析 → 写作 → 核查 → 终稿；团队库共 14 个角色，未上画布的可从「添加 Agent → 团队库」直接插入。
 - 节点可拖动、连线、删除；位置自动保存。
 - 添加专家节点：插入“风险审查员/数据可视化师/合规审查员”，自动接到下游。
-- 14 个插件都有服务端运行时：知识插件改变检索，认知/验证插件追加产出，工具插件进入 function calling。
+- 15 个插件都有服务端运行时：知识插件改变检索，认知/验证插件追加产出，工具插件进入 function calling。
 
 ### 3. 工具运行时
 
@@ -78,7 +81,10 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 
 - 核查员抽取报告中的结论与引用。
 - 四态判定：`supported` / `partial` / `contradicted` / `unsupported`，并检查方向、单位、统计期间、主体与数字锚点。
-- 不通过时按类型路由：缺引用回研究员，数字不一致回分析师，表述问题回写作。
+- **覆盖与冲突核验**（`verify.coverage` 插件）：知识库先被规则编译成市场 / 产业链 / 竞争三页事实卡（不调模型、不落库），再检查报告是否漏掉关键事实、是否回避资料间分歧。
+- 三维判定：引用 / 覆盖 / 冲突三项都过阈值才算通过；任一项不达标，就按失败的那一维路由。
+- 不通过时按类型路由：缺引用回研究员，数字不一致回分析师，遗漏事实回写作，未说明口径差异回分析师，表述问题回写作。
+- 第 2 轮写作自动补一段“口径差异与关键事实补录”，缺的证据铸成 `[W…]` 引用。
 - 证据账本：逐条主张、引用原文、支持状态、核查结论与路由目标。
 - 默认最多回环 2 次，最终报告保留核查分与逐条结论。
 
@@ -96,12 +102,13 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 - **A2A**：`/.well-known/agent.json` 提供 Agent Card；`POST /a2a` 支持 JSON-RPC `message/send`、`tasks/get`、`tasks/cancel`，可被其他 Agent 发现并委派任务。
 - **混合检索**：BM25 + SQLite `chunk_vectors` 向量余弦；`knowledge_search` 返回 `score` 与 `vectorScore`。默认使用 192 维特征哈希；配置 `AGENTLOOM_EMBEDDING_URL` / `AGENTLOOM_EMBEDDING_MODEL` / `AGENTLOOM_EMBEDDING_API_KEY` 后自动调用 OpenAI-compatible `/embeddings`，把 `chunk_vectors` 升级为神经 embedding，失败回退哈希。
 
-演示运行的真实轨迹：
+演示运行的真实轨迹（`run-91bc6a30`，线上 Mock）：
 
 ```text
-第 1 轮核查：86%，3 条问题（中国出货量 80 万/35% 与证据 48 万/21% 不一致；2028 出货量 5000 万缺证据；2027 洗牌缺引用）
-        ↓ 路由：citation → 竞争情报员；下游分析师/撰写/核查随依赖重跑，数字问题同轮修正
-第 2 轮核查：100%，通过
+第 1 轮核查：引用 86% / 覆盖 71% / 冲突 0%，9 条问题
+        （3 条引用/数字；2 条关键事实漏写；4 处资料分歧未说明口径）
+        ↓ 路由：conflict → 首席分析师；下游撰写/核查随依赖重跑
+第 2 轮核查：100% / 100% / 100%，0 条问题，通过
 ```
 
 ## 快速开始
@@ -124,7 +131,7 @@ pnpm start
 # http://127.0.0.1:8787
 ```
 
-首次启动会自动建库、写入 6 篇演示资料、14 个 Agent 和示例工作流。数据在 `data/agentloom.db`；`pnpm reset` 只重建数据库，保留 `data/` 里的评测基准与来源文件。
+首次启动会自动建库、写入 7 篇演示资料、14 个 Agent 和示例工作流。数据在 `data/agentloom.db`；`pnpm reset` 只重建数据库，保留 `data/` 里的评测基准与来源文件。
 
 开发验证：
 
@@ -262,13 +269,13 @@ postcss.config.mjs Tailwind v4 PostCSS 配置
 
 ## 演示场景
 
-**AI 眼镜产业链投研**：上传 6 篇产业资料，交给工作流里的 8 个 Agent（团队库共 14 个角色）。三路研究并行，首席分析师用三视角发散、调用 `calculator` 复核规模数字并裁判收敛，撰写师产出带引用的报告，核查员发现 3 个问题后触发回环，第二轮通过。
+**AI 眼镜产业链投研**：上传 7 篇产业资料，交给工作流里的 8 个 Agent（团队库共 14 个角色）。三路研究并行，首席分析师用三视角发散、调用 `calculator` 复核规模数字并裁判收敛，撰写师产出带引用的报告；核查员装上 `verify.coverage` 后，第一轮查出引用缺口、2 条漏写事实与 4 处未说明的资料分歧（2028 出货量 3200 vs 5000 万台、复合增速 65% vs 85%、退货率 15% vs 12%、Meta 份额 62% vs 55%），回环一轮后三维全部通过。
 
 这不是一个“聊天机器人”，而是一条可以被观察、被干预、被验证的研究生产线。
 
 ## 当前边界
 
-- 14 个插件都有运行时；工具侧有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`。`tool.python` 是受限统计，不执行任意代码。
+- 15 个插件都有运行时；工具侧有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`。`tool.python` 是受限统计，不执行任意代码。
 - MCP 是 stdio 客户端，需要外部 MCP 服务；默认不启动。A2A 是可运行的兼容子集（Agent Card + message/send + tasks/get + tasks/cancel），不是完整 A2A SDK。
 - 条件节点支持单条件与 true/false 两路，不支持 and/or 组合表达式；画布可新建/编辑。
 - 子工作流通过 child Run 执行，最多 2 层；画布可插入，模板通过 seed/API 配置，暂无模板编辑器。
@@ -290,4 +297,4 @@ postcss.config.mjs Tailwind v4 PostCSS 配置
 
 ## License
 
-本项目为参赛作品，源代码与文档版权归团队所有。
+本项目为参赛作品，源代码与文档版权归团队所有。公开仓库仅授权用于本届“未来杯”评审与学习交流，未经书面许可不得商用或再分发；完整条款见 [LICENSE](./LICENSE)。第三方组件许可见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。

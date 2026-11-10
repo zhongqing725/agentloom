@@ -15,7 +15,7 @@
 
 织序 AgentLoom 是面向多 Agent 协作的可视化编排、调度与验证平台。默认演示场景为“AI 眼镜产业链投研”：
 
-- 6 篇模拟知识资料，14 个 Agent 角色（默认工作流用 8 个）；其余角色可在「添加 Agent → 团队库」直接插入，不新建 Agent。
+- 7 篇模拟知识资料，14 个 Agent 角色（默认工作流用 8 个）；其余角色可在「添加 Agent → 团队库」直接插入，不新建 Agent。
 - 三路研究并行，首席分析师展开三视角并调用 `calculator`，核查员失败后按问题类型路由并回环。
 - 知识库支持 MD / TXT / PDF；文档带来源链接、类型与发布时间。
 - 工具运行时：`calculator` / `knowledge_search` / `data_stats` / `browser_fetch`；Mock 模式也真执行，事件流可见 `tool.call` / `tool.result`。
@@ -97,7 +97,7 @@ pnpm reset
 # 或先停服务，再删除 data/agentloom.db* 后重新启动
 ```
 
-- 运行记录、证据、事件都存 SQLite。重置会丢失所有历史运行，但会恢复 14 Agent / 10 节点 / 6 资料初始状态。
+- 运行记录、证据、事件都存 SQLite。重置会丢失所有历史运行，但会恢复 14 Agent / 10 节点 / 7 资料初始状态。
 - 无认证、无多租户，这是本地演示原型。
 
 ## 5. 代码地图
@@ -149,7 +149,7 @@ AGENTS.md / .cursor/     BoardUI always-on 设计规则
 | `/workflow` | React Flow 画布、拖拽/连线/删除、添加 Agent、插件拖放、检查器 |
 | `/runs/:id` | 执行图谱、研究报告、证据账本、核查与回环、事件流（含 tool.call） |
 | `/evals` | 累计指标、回环前后对比、全部运行历史 |
-| `/plugins` | 14 个插件、全部可运行、挂载状态 |
+| `/plugins` | 15 个插件、全部可运行、挂载状态 |
 | `/training` | 固定评测集、候选提示词、版本启用/回滚 |
 
 运行页五个标签由 BoardUI `Tabs` 的 segmented 变体提供；移动端导航由 BoardUI `Modal` 提供抽屉形态。
@@ -200,7 +200,10 @@ AGENTS.md / .cursor/     BoardUI always-on 设计规则
 pnpm typecheck  # 通过
 pnpm smoke      # 通过：score=1 · loops=1 · tools=2
 pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
+pnpm exec tsx scripts/wiki-probe.ts  # 通过：58 条事实卡 / 4 处冲突，示例报告覆盖与冲突均未达标
 ```
+
+线上 Mock 三维基线（`run-91bc6a30`）：第 1 轮 86% / 71% / 0%，9 条问题；第 2 轮 100% / 100% / 100%，0 条问题。
 
 最终构建：JS 约 987 kB / gzip 约 305 kB，CSS 约 166 kB / gzip 约 27 kB。
 
@@ -263,6 +266,7 @@ ssh -p 10898 root@103.68.192.80 "bash /tmp/setup.sh"
 ```
 
 - `setup.sh` 会重写 systemd unit、`systemctl restart agentloom`，只删 `/opt/agentloom/dist`，`data/` 里的库和运行记录保留。
+- **旧库升级到 wiki 层**（已做过一次，新库由 seed 自带，无需再做）：插入 `verify.coverage` 插件行、把插件追加到 `agent-verifier.plugins_json`、`verifyThreshold` 调到 `0.8`、插入第 7 篇 `doc-broker` 及其 chunks。缺任何一步，线上表现会是“插件不生效”或“冲突维度恒为 100%”。
 - 长期 Live 把 `AGENTLOOM_API_KEY=...` 写进 `/opt/agentloom/.env`（unit 里已加 `EnvironmentFile=-/opt/agentloom/.env`）；设置页填的 Key 只改 `process.env`，重启即丢。
 - 部署后用 `curl -s http://103.68.192.80/api/config` 确认 `hasKey` 与 `mode`，再抓首页看 asset hash 是否换新。
 - 公开实例建议留在 Mock：带 Key 的 Live 会被任何人点一次就跑一次，费用不可控。

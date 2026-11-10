@@ -1,0 +1,18 @@
+# 许可与使用条款
+
+Copyright (c) 2026 织序 AgentLoom 团队。保留所有权利。
+
+本仓库是 2026 第五届“未来杯”创新大赛（赛题一：Agent 编排创新应用）的参赛作品。公开本仓库仅为赛事评审与学习交流，授权范围如下：
+
+1. 大赛组委会、评审专家为评审、复现、演示之目的使用、构建与运行本仓库；
+2. 个人或教学机构出于学习、研究目的阅读、引用与本地运行。
+
+未经著作权人事先书面许可，**不得**：
+
+- 将本仓库或其衍生作品用于任何商业目的；
+- 再分发、再许可、销售，或将其整体/主要部分托管为对外服务；
+- 将本仓库中的 Agent 编排、调度、验证实现作为模板、组件库或 SDK 单独分发。
+
+第三方组件（BoardUI、React Bits 等）遵循其各自许可证，详见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。本仓库不包含任何第三方 API Key 或生产环境密钥。
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
