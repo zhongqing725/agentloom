@@ -1,7 +1,7 @@
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type NodeStatus = 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'waiting' | 'skipped'
 export type AgentRole = 'planner' | 'researcher' | 'analyst' | 'writer' | 'verifier' | 'editor' | 'specialist'
-export type NodeKind = 'input' | 'agent' | 'verifier' | 'output'
+export type NodeKind = 'input' | 'agent' | 'verifier' | 'output' | 'condition' | 'subflow'
 export type Mode = 'mock' | 'live'
 
 export interface Project {
@@ -45,6 +45,8 @@ export interface Agent {
   tools: string[]
   plugins: string[]
   sort: number
+  /** Max concurrent nodes this agent may run; used by the load-aware scheduler. */
+  capacity?: number
 }
 
 export interface PluginDef {
@@ -64,6 +66,15 @@ export interface GraphNodeData {
   angle?: string
   pluginIds?: string[]
   kind?: NodeKind
+  /** Used by `condition` nodes. `path` is read from the source node output. */
+  condition?: {
+    sourceNodeId: string
+    path: string
+    op: 'gte' | 'lte' | 'eq'
+    value: number | string | boolean
+  }
+  /** Used by `subflow` nodes: run another workflow as a child run. */
+  subflowWorkflowId?: string
 }
 
 export interface GraphNode {
@@ -79,6 +90,8 @@ export interface GraphEdge {
   target: string
   kind?: 'flow' | 'loop'
   label?: string
+  /** `condition` node branches: only the matching side runs. */
+  condition?: 'true' | 'false'
 }
 
 export interface Workflow {
@@ -272,6 +285,8 @@ export interface SearchHit {
   docTitle: string
   text: string
   score: number
+  /** Cosine similarity from the built-in hashed vector index. */
+  vectorScore?: number
 }
 
 /* ---------------------------------------------------------------------------

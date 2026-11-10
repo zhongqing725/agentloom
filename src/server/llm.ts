@@ -21,6 +21,8 @@ export interface AgentContext {
   feedback?: string
   iteration: number
   mode: Mode
+  /** Recalled short-term notes from previous runs. */
+  memory?: string[]
 }
 
 const ANGLE_KEYWORDS: Record<string, string[]> = {
@@ -762,7 +764,7 @@ async function callLive(
     { role: 'user', content: user },
   ]
   const promptText = messages.map((message) => message.content ?? '').join('\n')
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const request = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -775,7 +777,29 @@ async function callLive(
       ...(options?.json ? { response_format: { type: 'json_object' } } : {}),
       ...(options?.tools?.length ? { tools: options.tools, tool_choice: 'auto' } : {}),
     }),
-  })
+  }
+  // ponytail: 真实端点会挂死（曾静默 2 小时）或瞬断，所以给死线 + 一次重试。
+  // 需要指数退避/熔断再上，别提前写重试框架。
+  const timeoutMs = Number(process.env.AGENTLOOM_HTTP_TIMEOUT_MS ?? 180_000)
+  let response: Response | undefined
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const attemptResponse = await fetch(`${baseUrl}/chat/completions`, {
+        ...request,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if ((attemptResponse.status >= 500 || attemptResponse.status === 429) && attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        continue
+      }
+      response = attemptResponse
+      break
+    } catch (error) {
+      if (attempt === 1) throw error
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+    }
+  }
+  if (!response) throw new Error('LLM 请求未发出')
   if (!response.ok) {
     const detail = await response.text()
     throw new Error(`LLM 请求失败 ${response.status}: ${detail.slice(0, 240)}`)
@@ -786,13 +810,20 @@ async function callLive(
   }
   const message = payload.choices?.[0]?.message
   const text = message?.content ?? ''
+  const promptTokens = payload.usage?.prompt_tokens ?? estimateTokens(promptText)
+  const completionTokens = payload.usage?.completion_tokens ?? estimateTokens(text)
+  const inputPrice = Number(process.env.AGENTLOOM_INPUT_PRICE_PER_1K ?? 0.0002)
+  const outputPrice = Number(process.env.AGENTLOOM_OUTPUT_PRICE_PER_1K ?? 0.0008)
+  const cost =
+    (promptTokens / 1000) * (Number.isFinite(inputPrice) ? inputPrice : 0.0002) +
+    (completionTokens / 1000) * (Number.isFinite(outputPrice) ? outputPrice : 0.0008)
   return {
     text,
     toolCalls: message?.tool_calls,
     usage: {
-      promptTokens: payload.usage?.prompt_tokens ?? estimateTokens(promptText),
-      completionTokens: payload.usage?.completion_tokens ?? estimateTokens(text),
-      cost: 0,
+      promptTokens,
+      completionTokens,
+      cost: Number(cost.toFixed(6)),
     },
   }
 }
@@ -822,6 +853,7 @@ function livePrompt(ctx: AgentContext, extra?: string): string {
     ctx.angle ? `研究角度：${ctx.angle}` : '',
     `上游输出：${asJson(ctx.upstream.map((item) => ({ title: item.title, data: item.output.data, text: item.output.text?.slice(0, 1200) })))}`,
     evidence ? `可用证据：\n${evidence}` : '',
+    ctx.memory?.length ? `相关记忆：\n${ctx.memory.map((item) => `- ${item}`).join('\n')}` : '',
     ctx.feedback ? `上一轮核查反馈：${ctx.feedback}` : '',
     extra ?? '',
     '请严格按系统提示输出。',
@@ -866,12 +898,19 @@ async function liveAgent(ctx: AgentContext): Promise<NodeOutput> {
     { role: 'system', content: ctx.agent.systemPrompt },
     {
       role: 'user',
-      content: livePrompt(ctx, '需要计算时调用 calculator；需要证据时调用 knowledge_search。工具结果要写进最终回答。'),
+      content: livePrompt(
+        ctx,
+        '需要计算时调用 calculator；需要证据时调用 knowledge_search。最多调用 4 次工具；拿到足够结果后直接输出最终回答。',
+      ),
     },
   ]
   const calls: ToolCall[] = []
   let text = ''
   let usage: Usage = { promptTokens: 0, completionTokens: 0, cost: 0 }
+  // ponytail: cap parallel tool calls. A provider can return dozens of calls
+  // in one turn; without a cap the analyst can burn 200+ calls and minutes.
+  const MAX_CALLS_PER_HOP = 6
+  const MAX_CALLS_PER_NODE = 12
 
   for (let hop = 0; hop < 3; hop += 1) {
     // A tool turn must stay free-form; response_format=json_object blocks tool calls on some providers.
@@ -885,8 +924,9 @@ async function liveAgent(ctx: AgentContext): Promise<NodeOutput> {
     if (result.text) text = result.text
     if (!result.toolCalls?.length) break
 
-    messages.push({ role: 'assistant', content: result.text || null, tool_calls: result.toolCalls })
-    for (const raw of result.toolCalls) {
+    const turnCalls = result.toolCalls.slice(0, MAX_CALLS_PER_HOP)
+    messages.push({ role: 'assistant', content: result.text || null, tool_calls: turnCalls })
+    for (const raw of turnCalls) {
       const call = await invokeTool(raw.function.name, parseToolArgs(raw.function.arguments))
       calls.push({ ...call, id: raw.id })
       messages.push({
@@ -895,9 +935,33 @@ async function liveAgent(ctx: AgentContext): Promise<NodeOutput> {
         content: JSON.stringify(call.error ? { error: call.error } : call.result).slice(0, 4000),
       })
     }
+    if (calls.length >= MAX_CALLS_PER_NODE) {
+      text = text || '工具调用预算已用完，请基于已有结果直接输出最终回答。'
+      break
+    }
   }
 
   return { ...toLiveOutput(ctx, text, usage, json), toolCalls: calls }
+}
+
+/**
+ * 0.82 卡住的根因：核查员每轮自己拍一个总分，重写修完当轮问题后它又换一批新标准，
+ * 分数永远追不上阈值。改成核查员只给每条主张贴标签，分数由这里算：
+ * 只看「真的断言了事实」的主张——有引用坐实=support，无引用=unsupported；
+ * 显式声明成证据缺口的主张不算断言，只披露、不扣分（否则越诚实分越低）。
+ */
+function claimWeight(claim: { label?: string; supported?: boolean }): number {
+  const label = claim.label ?? (claim.supported ? 'supported' : 'unsupported')
+  if (label === 'supported') return 1
+  if (label === 'partial') return 0.5
+  return 0
+}
+
+function scoreFromClaims(claims: Array<{ label?: string; supported?: boolean }>): number | undefined {
+  const asserted = claims.filter((claim) => claim.label !== 'partial')
+  if (asserted.length === 0) return claims.length > 0 ? 0 : undefined
+  const supported = asserted.filter((claim) => claimWeight(claim) === 1).length
+  return Number((supported / asserted.length).toFixed(2))
 }
 
 async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeOutput> {
@@ -906,16 +970,24 @@ async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeO
   try {
     const result = await callLive(
       ctx.agent.systemPrompt,
-      `${livePrompt(ctx)}\n\n待核查报告：\n${markdown}\n\n请输出 JSON：{"score":0-1,"passed":boolean,"claims":[{"claim":"","citation":"","supported":boolean,"reason":""}],"issues":[""],"routes":[{"type":"citation|number|logic|coverage|wording","target":"market|chain|competition|analyst|writer|planner","message":""}]}`,
+      `${livePrompt(ctx)}\n\n待核查报告：\n${markdown}\n\n评分规则（必须遵守）：
+- 每条 claim 只贴标签 label：supported=引文能直接坐实；partial=报告已显式说明这是证据缺口/情景假设/模拟示意/待验证，并写清缺什么数据；unsupported=以确定语气断言却无引用或引文不支持；contradicted=与引文冲突。
+- 知识库本来就没有的数据不算失败；缺数据却装作有数据才算失败。
+- 分数由调用方按「断言的主张中有多少被引用坐实」计算：partial 不算断言、不计入分母，也不要为了让它变成 supported 而勉强坐实。
+- 反过来，把有证据的内容也标成 partial 来回避判断，算 wording 问题，要列入 issues。
+- issues 只写 unsupported/contradicted 项，并给出可执行改法。
+
+请输出 JSON：{"claims":[{"claim":"","citation":"","label":"supported|partial|unsupported|contradicted","supported":boolean,"reason":""}],"issues":[""],"routes":[{"type":"citation|number|logic|coverage|wording","target":"market|chain|competition|analyst|writer|planner","message":""}]}`,
       { json: true, temperature: 0.1 },
     )
     const parsed = parseJsonText(result.text) as Verdict | undefined
-    if (parsed && typeof parsed.score === 'number') {
+    if (parsed && (parsed.claims?.length || typeof parsed.score === 'number')) {
       const issues = parsed.issues ?? []
       const claims = parsed.claims ?? []
+      const score = scoreFromClaims(claims) ?? Number(parsed.score.toFixed(2))
       const verdict: Verdict = {
-        passed: parsed.score >= threshold,
-        score: Number(parsed.score.toFixed(2)),
+        passed: score >= threshold,
+        score,
         issues,
         routes: parsed.routes?.length ? parsed.routes : routesFromClaims(claims, issues),
         claims,
@@ -1094,6 +1166,10 @@ async function attachMockTool(ctx: AgentContext, output: NodeOutput): Promise<No
   }
   if (specs.includes('browser_fetch') && !calls.some((call) => call.name === 'browser_fetch')) {
     calls.push(await invokeTool('browser_fetch', { url: 'https://example.com', limit: 600 }))
+  }
+  const mcpName = specs.find((name) => name.startsWith('mcp__'))
+  if (mcpName && !calls.some((call) => call.name === mcpName)) {
+    calls.push(await invokeTool(mcpName, mcpName.endsWith('__echo') ? { text: 'mcp ping' } : {}))
   }
   return calls.length === (output.toolCalls?.length ?? 0) ? output : { ...output, toolCalls: calls }
 }

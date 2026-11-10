@@ -5,20 +5,34 @@ import { searchKnowledge } from './retrieval.js'
 import {
   appendEvent,
   createNodeRun,
+  createRun,
   getDb,
   getProject,
   getRun,
   getWorkflow,
+  getWorkflowById,
   listAgents,
+  recallAgentMemory,
+  rememberAgentMemory,
+  saveRunCheckpoint,
   updateNodeRun,
   updateRun,
 } from './db.js'
 import { publishRunEvent } from './bus.js'
 
 const cancelledRuns = new Set<string>()
+const pausedRuns = new Set<string>()
 
 export function cancelRun(runId: string) {
   cancelledRuns.add(runId)
+}
+
+export function pauseRun(runId: string) {
+  pausedRuns.add(runId)
+}
+
+export function resumeRun(runId: string) {
+  pausedRuns.delete(runId)
 }
 
 interface NodeState {
@@ -63,14 +77,19 @@ const NODE_LABEL: Record<string, string> = {
   output: '研究报告',
 }
 
-export async function executeRun(runId: string): Promise<void> {
+export async function executeRun(runId: string, runDepth = 0): Promise<void> {
   const run = getRun(runId)
   if (!run || run.status !== 'running') return
-  const workflow = getWorkflow()
+  if (runDepth > 2) throw new Error('子工作流嵌套超过 2 层，已停止。')
+  const workflow = getWorkflowById(run.workflowId) ?? getWorkflow()
   const agents = listAgents()
   const project = getProject()
   const threshold = workflow.settings.verifyThreshold
-  const maxLoop = workflow.settings.maxLoop
+  const liveMaxLoop = Number(process.env.AGENTLOOM_LIVE_MAX_LOOP ?? 1)
+  const maxLoop =
+    run.mode === 'live'
+      ? Math.min(workflow.settings.maxLoop, Number.isFinite(liveMaxLoop) ? Math.max(0, liveMaxLoop) : 1)
+      : workflow.settings.maxLoop
   const budget = workflow.settings.budgetUsd
   const maxConcurrency = Math.max(1, workflow.settings.maxConcurrency)
   const mockDelay = Math.max(0, Number(process.env.AGENTLOOM_MOCK_DELAY ?? 380))
@@ -148,12 +167,12 @@ export async function executeRun(runId: string): Promise<void> {
         output: state.output!,
       }))
 
-  const retrieveEvidence = (angle: string, context: string, plugins: string[]): Evidence[] => {
+  const retrieveEvidence = async (angle: string, context: string, plugins: string[]): Promise<Evidence[]> => {
     const prefix = ANGLE_PREFIX[angle] ?? 'E'
     const preferredDoc = ANGLE_DOC[angle]
     const query = ANGLE_QUERY[angle] ?? `${angle} ${context}`.trim()
     const db = getDb()
-    const hits = searchKnowledge(db, project.id, query, 10, preferredDoc).sort((a, b) => {
+    const hits = (await searchKnowledge(db, project.id, query, 10, preferredDoc)).sort((a, b) => {
       const ap = a.docId === preferredDoc ? 0 : 1
       const bp = b.docId === preferredDoc ? 0 : 1
       if (ap !== bp) return ap - bp
@@ -165,7 +184,7 @@ export async function executeRun(runId: string): Promise<void> {
     if (plugins.includes('knowledge.graph')) {
       const seen = new Set(hits.map((hit) => hit.chunkId))
       for (const hit of hits.slice(0, 3)) {
-        for (const related of searchKnowledge(db, project.id, hit.text.slice(0, 120), 2)) {
+        for (const related of await searchKnowledge(db, project.id, hit.text.slice(0, 120), 2)) {
           if (seen.has(related.chunkId)) continue
           seen.add(related.chunkId)
           hits.push(related)
@@ -209,6 +228,65 @@ export async function executeRun(runId: string): Promise<void> {
   const chooseRoute = (routes: VerdictRoute[]): VerdictRoute | undefined => {
     const priority: Record<string, number> = { citation: 5, number: 4, logic: 3, coverage: 2, wording: 1, other: 0 }
     return [...routes].sort((a, b) => (priority[b.type] ?? 0) - (priority[a.type] ?? 0))[0]
+  }
+
+  const evaluateCondition = (node: GraphNode): { passed: boolean; value: unknown; sourceNodeId: string; path: string } => {
+    const spec = node.data.condition
+    if (!spec) return { passed: false, value: undefined, sourceNodeId: '', path: '' }
+    const source = states.get(spec.sourceNodeId)?.output
+    let value: unknown = source
+    for (const key of spec.path.split('.').filter(Boolean)) {
+      if (value && typeof value === 'object' && key in (value as Record<string, unknown>)) {
+        value = (value as Record<string, unknown>)[key]
+      } else {
+        value = undefined
+        break
+      }
+    }
+    let passed = false
+    if (spec.op === 'eq') {
+      passed = String(value) === String(spec.value)
+    } else {
+      const left = Number(value)
+      const right = Number(spec.value)
+      if (Number.isFinite(left) && Number.isFinite(right)) {
+        passed = spec.op === 'gte' ? left >= right : left <= right
+      }
+    }
+    return { passed, value, sourceNodeId: spec.sourceNodeId, path: spec.path }
+  }
+
+  /** After a condition completes, skip the branch that was not taken. */
+  const applyConditionBranch = (node: GraphNode, passed: boolean) => {
+    const chosen = passed ? 'true' : 'false'
+    const edges = workflow.graph.edges.filter((edge) => edge.source === node.id && edge.condition)
+    if (edges.length === 0) return
+    const reachable = (starts: string[]): Set<string> => {
+      const seen = new Set<string>(starts)
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const edge of workflow.graph.edges) {
+          if (edge.kind === 'loop') continue
+          if (seen.has(edge.source) && !seen.has(edge.target)) {
+            seen.add(edge.target)
+            changed = true
+          }
+        }
+      }
+      return seen
+    }
+    const chosenNodes = reachable(edges.filter((edge) => edge.condition === chosen).map((edge) => edge.target))
+    const skippedNodes = reachable(
+      edges.filter((edge) => edge.condition !== chosen).map((edge) => edge.target),
+    )
+    for (const id of skippedNodes) {
+      if (chosenNodes.has(id)) continue
+      const state = states.get(id)
+      if (!state || state.status !== 'pending') continue
+      state.status = 'skipped'
+      emit('node.skipped', `${state.node.data.label} 未走条件分支，已跳过`, { condition: chosen }, id)
+    }
   }
 
   const executeNode = async (state: NodeState): Promise<void> => {
@@ -256,6 +334,31 @@ export async function executeRun(runId: string): Promise<void> {
           data: { markdown },
         }
         finalMarkdown = markdown
+      } else if (node.type === 'condition') {
+        const result = evaluateCondition(node)
+        output = {
+          text: JSON.stringify(result),
+          data: result as unknown as Record<string, unknown>,
+          score: result.passed ? 1 : 0,
+        }
+      } else if (node.type === 'subflow') {
+        const subflowId = node.data.subflowWorkflowId
+        if (!subflowId) throw new Error(`子工作流节点 ${node.id} 没有配置 subflowWorkflowId。`)
+        const child = createRun(run.input, run.mode, subflowId)
+        emit('subflow.started', `进入子工作流 ${subflowId}`, { childRunId: child.id }, node.id)
+        await executeRun(child.id, runDepth + 1)
+        const childRun = getRun(child.id)
+        emit('subflow.completed', `子工作流结束：${childRun?.status ?? 'unknown'}`, { childRunId: child.id }, node.id)
+        output = {
+          text: childRun?.output ?? '',
+          markdown: childRun?.output,
+          data: {
+            subflowRunId: child.id,
+            subflowWorkflowId: subflowId,
+            subflowStatus: childRun?.status,
+          },
+          score: childRun?.score,
+        }
       } else if (agent) {
         if (totalCost > budget) {
           throw new Error(`预算上限 $${budget} 已用完，调度器停止了后续模型调用。`)
@@ -270,11 +373,12 @@ export async function executeRun(runId: string): Promise<void> {
           upstream: buildUpstream(node.id),
           evidence:
             knowledgePlugins.length > 0
-              ? retrieveEvidence(node.data.angle ?? '市场', `${node.data.subtitle ?? ''} ${agent.title}`, knowledgePlugins)
+              ? await retrieveEvidence(node.data.angle ?? '市场', `${node.data.subtitle ?? ''} ${agent.title}`, knowledgePlugins)
               : [],
           feedback: feedback || undefined,
           iteration: state.iteration,
           mode: run.mode,
+          memory: recallAgentMemory(agent.id, `${run.input} ${node.data.angle ?? ''}`.trim(), 3),
         }
 
         if (agent.role === 'analyst' && agent.plugins.includes('cognition.diverge')) {
@@ -394,6 +498,35 @@ export async function executeRun(runId: string): Promise<void> {
       state.score = score
       state.error = undefined
 
+      if (node.type === 'condition') {
+        applyConditionBranch(node, Boolean(output.data?.passed))
+      }
+
+      if (agent) {
+        const memoryText = `${node.data.label}：${output.markdown ?? output.text ?? output.verdict?.issues.join('；') ?? ''}`
+        rememberAgentMemory({
+          agentId: agent.id,
+          projectId: project.id,
+          runId,
+          nodeId: node.id,
+          text: memoryText,
+        })
+      }
+
+      saveRunCheckpoint(runId, node.id, {
+        loopCount,
+        feedback,
+        totalCost,
+        totalTokens,
+        nodes: [...states.values()].map((item) => ({
+          nodeId: item.node.id,
+          status: item.status,
+          score: item.score,
+          iteration: item.iteration,
+          output: item.output,
+        })),
+      })
+
       const preview =
         output.markdown?.slice(0, 180) ??
         output.text?.slice(0, 180) ??
@@ -445,7 +578,17 @@ export async function executeRun(runId: string): Promise<void> {
 
   const running = new Map<string, Promise<void>>()
 
+  const agentCapacity = (agentId?: string) => {
+    if (!agentId) return 1
+    return Math.max(1, agents.find((agent) => agent.id === agentId)?.capacity ?? 1)
+  }
+  const agentLoad = (agentId?: string) => {
+    if (!agentId) return 0
+    return [...running.keys()].filter((nodeId) => states.get(nodeId)?.node.data.agentId === agentId).length
+  }
+
   try {
+    let pausedNotice = false
     while (true) {
       if (cancelledRuns.has(runId)) {
         updateRun(runId, {
@@ -457,17 +600,29 @@ export async function executeRun(runId: string): Promise<void> {
         emit('run.cancelled', '运行已取消')
         return
       }
+      if (pausedRuns.has(runId)) {
+        if (!pausedNotice) {
+          pausedNotice = true
+          emit('run.paused', '运行已暂停，等待人工继续', { running: running.size })
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        continue
+      }
+      pausedNotice = false
       if (fatalError) break
 
       const ready = [...states.values()]
-        .filter(
-          (state) =>
-            state.status === 'pending' &&
-            deps.get(state.node.id)?.every((dep) => states.get(dep)?.status === 'completed'),
-        )
+        .filter((state) => {
+          if (state.status !== 'pending') return false
+          if (!deps.get(state.node.id)?.every((dep) => ['completed', 'skipped'].includes(states.get(dep)?.status ?? ''))) return false
+          // Load-aware: a node waits if its agent already has `capacity` running nodes.
+          return agentLoad(state.node.data.agentId) < agentCapacity(state.node.data.agentId)
+        })
         .sort((a, b) => {
           const depthDiff = depth(b.node.id) - depth(a.node.id)
           if (depthDiff !== 0) return depthDiff
+          const loadDiff = agentLoad(a.node.data.agentId) - agentLoad(b.node.data.agentId)
+          if (loadDiff !== 0) return loadDiff
           return a.node.position.x - b.node.position.x
         })
 
@@ -477,6 +632,8 @@ export async function executeRun(runId: string): Promise<void> {
         emit('node.queued', `${state.node.data.label} 进入调度队列`, {
           priority: depth(state.node.id),
           running: running.size,
+          agentLoad: agentLoad(state.node.data.agentId),
+          agentCapacity: agentCapacity(state.node.data.agentId),
         }, state.node.id)
         const promise = executeNode(state).finally(() => {
           running.delete(state.node.id)

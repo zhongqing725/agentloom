@@ -7,6 +7,7 @@ import type { EvalCase, KnowledgeDoc, Mode } from '../shared/types.js'
 import {
   activateVersion,
   addDocument,
+  clearAgentMemory,
   createAgent,
   createTrainingRun,
   createVersion,
@@ -19,22 +20,29 @@ import {
   getRunDetail,
   getTrainingRun,
   initDb,
+  listAgentMemory,
   listDocuments,
   listEvalCases,
   listEvents,
   listChunks,
+  listRunCheckpoints,
   listRuns,
   listTrainingRuns,
   listVersions,
+  listWorkflows,
+  recallAgentMemory,
+  rememberAgentMemory,
   updateAgent,
   updateWorkflow,
   upsertEvalCase,
 } from './db.js'
 import { extractPdf, looksLikeScannedPdf } from './documents.js'
-import { executeRun, cancelRun } from './engine.js'
+import { executeRun, cancelRun, pauseRun, resumeRun } from './engine.js'
 import { executeTraining } from './trainer.js'
 import { runBus } from './bus.js'
 import { searchKnowledge } from './retrieval.js'
+import { mcpStatus, startMcpServers, stopMcpServers } from './mcp.js'
+import { agentCard, handleA2A } from './a2a.js'
 
 const PORT = Number(process.env.PORT || 8787)
 const WEB_DIST = path.resolve(process.cwd(), 'dist/web')
@@ -44,11 +52,22 @@ function resolveMode(): Mode {
   return process.env.AGENTLOOM_API_KEY ? 'live' : 'mock'
 }
 
-const app = Fastify({ logger: { level: 'warn' } })
+export const app = Fastify({ logger: { level: 'warn' } })
 
 await app.register(multipart, { limits: { fileSize: 12 * 1024 * 1024 } })
+await startMcpServers()
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    stopMcpServers()
+    process.exit(0)
+  })
+}
 
-app.get('/api/health', async () => ({ ok: true, mode: resolveMode(), time: new Date().toISOString() }))
+app.get('/api/health', async () => ({ ok: true, mode: resolveMode(), time: new Date().toISOString(), mcp: mcpStatus() }))
+
+app.get('/.well-known/agent.json', async () => agentCard(resolveMode()))
+
+app.post('/a2a', async (request) => handleA2A(request.body as { id?: string | number; method?: string; params?: Record<string, unknown> }, resolveMode()))
 
 app.get('/api/config', async () => ({
   mode: resolveMode(),
@@ -76,6 +95,8 @@ app.post('/api/config', async (request) => {
 })
 
 app.get('/api/bootstrap', async () => getBootstrap(resolveMode()))
+
+app.get('/api/workflows', async () => ({ workflows: listWorkflows() }))
 
 app.get('/api/documents', async () => ({ documents: listDocuments() }))
 
@@ -162,7 +183,7 @@ app.post('/api/kb/search', async (request) => {
   const query = body?.query?.trim() ?? ''
   if (!query) return { hits: [] }
   const bootstrap = getBootstrap(resolveMode())
-  const hits = searchKnowledge(getDb(), bootstrap.project.id, query, Math.min(body?.limit ?? 6, 12))
+  const hits = await searchKnowledge(getDb(), bootstrap.project.id, query, Math.min(body?.limit ?? 6, 12))
   return { hits }
 })
 
@@ -178,6 +199,7 @@ app.post('/api/agents', async (request, reply) => {
     systemPrompt?: string
     tools?: string[]
     plugins?: string[]
+    capacity?: number
   } | undefined
   if (!body?.name?.trim() || !body?.title?.trim()) {
     return reply.code(400).send({ error: 'name 和 title 不能为空。' })
@@ -196,6 +218,7 @@ app.post('/api/agents', async (request, reply) => {
       '你是团队按需加入的专家。阅读上游输出，指出被忽略的风险、证据缺口与需要复核的判断。只输出 JSON。',
     tools: body.tools ?? [],
     plugins: body.plugins ?? [],
+    capacity: typeof body.capacity === 'number' ? Math.max(1, Math.floor(body.capacity)) : 1,
   })
   return reply.code(201).send({ agent })
 })
@@ -212,9 +235,44 @@ app.put('/api/agents/:id', async (request, reply) => {
     systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
     tools: Array.isArray(body.tools) ? (body.tools as string[]) : undefined,
     plugins: Array.isArray(body.plugins) ? (body.plugins as string[]) : undefined,
+    capacity: typeof body.capacity === 'number' ? Math.max(1, Math.floor(body.capacity)) : undefined,
   })
   if (!agent) return reply.code(404).send({ error: 'Agent 不存在。' })
   return { agent }
+})
+
+app.get('/api/agents/:id/memory', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  if (!getAgent(id)) return reply.code(404).send({ error: 'Agent 不存在。' })
+  const query = request.query as { q?: string; limit?: string } | undefined
+  const limit = Math.min(Number(query?.limit || 20), 100)
+  if (query?.q?.trim()) {
+    return { memory: recallAgentMemory(id, query.q, Math.min(limit, 10)) }
+  }
+  return { memory: listAgentMemory(id, limit) }
+})
+
+app.post('/api/agents/:id/memory', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  const body = request.body as { text?: string } | undefined
+  const text = body?.text?.trim()
+  if (!text) return reply.code(400).send({ error: 'text 不能为空。' })
+  const agent = getAgent(id)
+  if (!agent) return reply.code(404).send({ error: 'Agent 不存在。' })
+  rememberAgentMemory({
+    agentId: id,
+    projectId: agent.projectId,
+    runId: 'manual',
+    nodeId: 'manual',
+    text,
+  })
+  return { memory: listAgentMemory(id, 20) }
+})
+
+app.delete('/api/agents/:id/memory', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  if (!getAgent(id)) return reply.code(404).send({ error: 'Agent 不存在。' })
+  return { cleared: clearAgentMemory(id) }
 })
 
 app.put('/api/workflow', async (request) => {
@@ -239,9 +297,11 @@ app.post('/api/runs', async (request, reply) => {
     '请生成一份面向投资决策的 AI 眼镜产业链研究报告，重点回答市场空间、价值链分配、竞争格局与主要风险。'
   const { createRun } = await import('./db.js')
   const run = createRun(input, resolveMode())
-  void executeRun(run.id).catch((error) => {
+  const execution = executeRun(run.id).catch((error) => {
     app.log.error(error)
   })
+  // 无服务器环境（Vercel）在返回响应后实例会被冻结，只能把这次运行跑在请求内。
+  if (process.env.VERCEL) await execution
   return reply.code(201).send({ run })
 })
 
@@ -306,6 +366,26 @@ app.post('/api/runs/:id/cancel', async (request, reply) => {
   return { ok: true }
 })
 
+app.post('/api/runs/:id/pause', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  if (!getRun(id)) return reply.code(404).send({ error: '运行不存在。' })
+  pauseRun(id)
+  return { ok: true, paused: true }
+})
+
+app.post('/api/runs/:id/resume', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  if (!getRun(id)) return reply.code(404).send({ error: '运行不存在。' })
+  resumeRun(id)
+  return { ok: true, paused: false }
+})
+
+app.get('/api/runs/:id/checkpoints', async (request, reply) => {
+  const { id } = request.params as { id: string }
+  if (!getRun(id)) return reply.code(404).send({ error: '运行不存在。' })
+  return { checkpoints: listRunCheckpoints(id) }
+})
+
 /* ------------------------------------------------------------------ training */
 
 app.get('/api/training', async (request, reply) => {
@@ -327,7 +407,8 @@ app.post('/api/training', async (request, reply) => {
   if (!getAgent(agentId)) return reply.code(404).send({ error: 'Agent 不存在。' })
   const mode = resolveMode()
   const run = createTrainingRun(agentId, mode)
-  void executeTraining(run.id, agentId, mode).catch((error) => app.log.error(error))
+  const execution = executeTraining(run.id, agentId, mode).catch((error) => app.log.error(error))
+  if (process.env.VERCEL) await execution
   return reply.code(201).send({ run })
 })
 
@@ -412,7 +493,7 @@ app.post('/api/training/cases/from-docs', async (request, reply) => {
   return reply.code(201).send({ cases: created })
 })
 
-if (fs.existsSync(WEB_DIST)) {
+if (!process.env.VERCEL && fs.existsSync(WEB_DIST)) {
   await app.register(fastifyStatic, { root: WEB_DIST, prefix: '/' })
   app.setNotFoundHandler((request, reply) => {
     if (request.raw.url?.startsWith('/api')) {
@@ -427,7 +508,7 @@ getDb()
   .prepare("UPDATE runs SET status = 'failed', error = '服务重启，运行中断' WHERE status IN ('running', 'queued')")
   .run()
 
-await app.listen({ port: PORT, host: '127.0.0.1' })
+if (!process.env.VERCEL) await app.listen({ port: PORT, host: process.env.HOST || '127.0.0.1' })
 const mode = resolveMode()
 console.log(`\n  织序 AgentLoom API  →  http://127.0.0.1:${PORT}`)
 console.log(`  模型模式：${mode === 'live' ? 'Live（已配置 API Key）' : 'Mock 演示'}`)

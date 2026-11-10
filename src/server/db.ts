@@ -24,8 +24,9 @@ import type {
   TrainingVersion,
   Workflow,
 } from '../shared/types.js'
-import { PROJECT, seedDatabase, seedTraining, WORKFLOW } from './seed.js'
+import { PROJECT, seedDatabase, seedTraining, SUBFLOW, WORKFLOW } from './seed.js'
 import { chunkDocument } from './seed.js'
+import { ensureVectors, tokenize } from './retrieval.js'
 
 // AGENTLOOM_DB lets the smoke test run against a throwaway file instead of the
 // demo database. Default behaviour is unchanged.
@@ -68,7 +69,8 @@ export function initDb(): DatabaseSync {
       system_prompt TEXT NOT NULL,
       tools_json TEXT NOT NULL,
       plugins_json TEXT NOT NULL,
-      sort INTEGER NOT NULL DEFAULT 0
+      sort INTEGER NOT NULL DEFAULT 0,
+      capacity INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS plugins (
@@ -206,16 +208,59 @@ export function initDb(): DatabaseSync {
     );
 
     CREATE INDEX IF NOT EXISTS idx_training_agent ON training_runs(agent_id, started_at);
+
+    CREATE TABLE IF NOT EXISTS agent_memory (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_memory ON agent_memory(agent_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS chunk_vectors (
+      chunk_id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      vector_json TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chunk_vectors_project ON chunk_vectors(project_id);
+
+    CREATE TABLE IF NOT EXISTS vector_meta (
+      project_id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS run_checkpoints (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      state_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_run_checkpoints ON run_checkpoints(run_id, created_at);
   `)
 
   const count = db.prepare('SELECT COUNT(*) AS n FROM projects').get() as { n: number }
   if (count.n === 0) {
     seedDatabase(db)
   }
+  ensureSubflowWorkflow(db)
   migrateDocuments(db)
   migrateRunGraph(db)
+  migrateAgentCapacity(db)
   migrateAgentTools(db)
   seedTraining(db)
+  ensureVectors(db)
   return db
 }
 
@@ -247,6 +292,35 @@ function migrateRunGraph(database: DatabaseSync) {
   const columns = database.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>
   if (!columns.some((column) => column.name === 'graph_json')) {
     database.exec('ALTER TABLE runs ADD COLUMN graph_json TEXT')
+  }
+}
+
+/** Adds the nested-workflow template to databases created before it existed. */
+function ensureSubflowWorkflow(database: DatabaseSync) {
+  const exists = database.prepare('SELECT id FROM workflows WHERE id = ?').get(SUBFLOW.id)
+  if (exists) return
+  const now = new Date().toISOString()
+  database
+    .prepare(
+      'INSERT INTO workflows (id, project_id, name, description, graph_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      SUBFLOW.id,
+      SUBFLOW.projectId,
+      SUBFLOW.name,
+      SUBFLOW.description,
+      JSON.stringify(SUBFLOW.graph),
+      JSON.stringify(SUBFLOW.settings),
+      now,
+      now,
+    )
+}
+
+/** Adds the per-agent capacity used by the load-aware scheduler. */
+function migrateAgentCapacity(database: DatabaseSync) {
+  const columns = database.prepare('PRAGMA table_info(agents)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'capacity')) {
+    database.exec('ALTER TABLE agents ADD COLUMN capacity INTEGER NOT NULL DEFAULT 1')
   }
 }
 
@@ -295,11 +369,83 @@ export function listAgents(): Agent[] {
     tools: parseJson<string[]>(row.tools_json as string, []),
     plugins: parseJson<string[]>(row.plugins_json as string, []),
     sort: Number(row.sort),
+    capacity: Number(row.capacity ?? 1),
   }))
 }
 
 export function getAgent(id: string): Agent | undefined {
   return listAgents().find((agent) => agent.id === id)
+}
+
+export interface AgentMemoryEntry {
+  id: string
+  agentId: string
+  runId: string
+  nodeId: string
+  text: string
+  createdAt: string
+}
+
+export function rememberAgentMemory(input: {
+  agentId: string
+  projectId: string
+  runId: string
+  nodeId: string
+  text: string
+}): void {
+  const text = input.text.trim().slice(0, 600)
+  if (!text) return
+  db.prepare(
+    'INSERT INTO agent_memory (id, agent_id, project_id, run_id, node_id, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    `mem-${crypto.randomUUID().slice(0, 8)}`,
+    input.agentId,
+    input.projectId,
+    input.runId,
+    input.nodeId,
+    text,
+    new Date().toISOString(),
+  )
+  // ponytail: keep 30 recent entries per agent; a real product would page/archive.
+  db.prepare(
+    `DELETE FROM agent_memory WHERE agent_id = ? AND id NOT IN (
+       SELECT id FROM agent_memory WHERE agent_id = ? ORDER BY created_at DESC LIMIT 30
+     )`,
+  ).run(input.agentId, input.agentId)
+}
+
+export function listAgentMemory(agentId: string, limit = 20): AgentMemoryEntry[] {
+  const rows = db
+    .prepare('SELECT * FROM agent_memory WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(agentId, Math.max(1, Math.min(limit, 100))) as Record<string, unknown>[]
+  return rows.map((row) => ({
+    id: String(row.id),
+    agentId: String(row.agent_id),
+    runId: String(row.run_id),
+    nodeId: String(row.node_id),
+    text: String(row.text),
+    createdAt: String(row.created_at),
+  }))
+}
+
+export function recallAgentMemory(agentId: string, query: string, limit = 3): string[] {
+  const entries = listAgentMemory(agentId, 30)
+  if (entries.length === 0) return []
+  const queryTokens = new Set(tokenize(query))
+  return entries
+    .map((entry) => {
+      let overlap = 0
+      for (const token of tokenize(entry.text)) if (queryTokens.has(token)) overlap += 1
+      return { entry, overlap }
+    })
+    .sort((a, b) => b.overlap - a.overlap || b.entry.createdAt.localeCompare(a.entry.createdAt))
+    .slice(0, Math.max(1, limit))
+    .map(({ entry }) => entry.text)
+}
+
+export function clearAgentMemory(agentId: string): number {
+  const result = db.prepare('DELETE FROM agent_memory WHERE agent_id = ?').run(agentId)
+  return Number(result.changes ?? 0)
 }
 
 export function updateAgent(id: string, patch: Partial<Agent>): Agent | undefined {
@@ -319,9 +465,10 @@ export function updateAgent(id: string, patch: Partial<Agent>): Agent | undefine
     tools: patch.tools ?? current.tools,
     plugins: patch.plugins ?? current.plugins,
     sort: patch.sort ?? current.sort,
+    capacity: patch.capacity ?? current.capacity ?? 1,
   }
   db.prepare(
-    `UPDATE agents SET name=?, role=?, title=?, description=?, color=?, model=?, temperature=?, system_prompt=?, tools_json=?, plugins_json=? WHERE id=?`,
+    `UPDATE agents SET name=?, role=?, title=?, description=?, color=?, model=?, temperature=?, system_prompt=?, tools_json=?, plugins_json=?, capacity=? WHERE id=?`,
   ).run(
     next.name,
     next.role,
@@ -333,6 +480,7 @@ export function updateAgent(id: string, patch: Partial<Agent>): Agent | undefine
     next.systemPrompt,
     JSON.stringify(next.tools),
     JSON.stringify(next.plugins),
+    next.capacity ?? 1,
     id,
   )
   return getAgent(id)
@@ -350,12 +498,13 @@ export function createAgent(input: {
   systemPrompt: string
   tools: string[]
   plugins: string[]
+  capacity?: number
 }): Agent {
   const id = `agent-${crypto.randomUUID().slice(0, 8)}`
   const sort = (db.prepare('SELECT COALESCE(MAX(sort), 0) AS n FROM agents').get() as { n: number }).n + 1
   db.prepare(
-    `INSERT INTO agents (id, project_id, name, role, title, description, color, model, temperature, system_prompt, tools_json, plugins_json, sort)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO agents (id, project_id, name, role, title, description, color, model, temperature, system_prompt, tools_json, plugins_json, sort, capacity)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.projectId,
@@ -370,6 +519,7 @@ export function createAgent(input: {
     JSON.stringify(input.tools),
     JSON.stringify(input.plugins),
     sort,
+    Math.max(1, input.capacity ?? 1),
   )
   return getAgent(id)!
 }
@@ -483,7 +633,21 @@ export function upsertEvalCase(input: {
 }
 
 export function getWorkflow(): Workflow {
-  const row = db.prepare('SELECT * FROM workflows LIMIT 1').get() as Record<string, unknown>
+  const row = db.prepare('SELECT * FROM workflows ORDER BY rowid ASC LIMIT 1').get() as Record<string, unknown>
+  return mapWorkflow(row)
+}
+
+export function getWorkflowById(id: string): Workflow | undefined {
+  const row = db.prepare('SELECT * FROM workflows WHERE id = ?').get(id) as Record<string, unknown> | undefined
+  return row ? mapWorkflow(row) : undefined
+}
+
+export function listWorkflows(): Workflow[] {
+  const rows = db.prepare('SELECT * FROM workflows ORDER BY rowid ASC').all() as Record<string, unknown>[]
+  return rows.map(mapWorkflow)
+}
+
+function mapWorkflow(row: Record<string, unknown>): Workflow {
   return {
     id: String(row.id),
     projectId: String(row.project_id),
@@ -515,9 +679,9 @@ export function updateWorkflow(input: { graph?: Workflow['graph']; settings?: Wo
   return getWorkflow()
 }
 
-export function createRun(input: string, mode: Mode): Run {
+export function createRun(input: string, mode: Mode, workflowId?: string): Run {
   const project = getProject()
-  const workflow = getWorkflow()
+  const workflow = (workflowId ? getWorkflowById(workflowId) : undefined) ?? getWorkflow()
   const run: Run = {
     id: `run-${crypto.randomUUID().slice(0, 8)}`,
     projectId: project.id,
@@ -545,6 +709,39 @@ export function createRun(input: string, mode: Mode): Run {
     run.startedAt,
   )
   return run
+}
+
+export interface RunCheckpoint {
+  id: string
+  runId: string
+  nodeId: string
+  state: Record<string, unknown>
+  createdAt: string
+}
+
+export function saveRunCheckpoint(runId: string, nodeId: string, state: Record<string, unknown>): void {
+  db.prepare(
+    'INSERT INTO run_checkpoints (id, run_id, node_id, state_json, created_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(
+    `ckpt-${crypto.randomUUID().slice(0, 8)}`,
+    runId,
+    nodeId,
+    JSON.stringify(state),
+    new Date().toISOString(),
+  )
+}
+
+export function listRunCheckpoints(runId: string, limit = 50): RunCheckpoint[] {
+  const rows = db
+    .prepare('SELECT * FROM run_checkpoints WHERE run_id = ? ORDER BY created_at ASC LIMIT ?')
+    .all(runId, Math.max(1, Math.min(limit, 200))) as Record<string, unknown>[]
+  return rows.map((row) => ({
+    id: String(row.id),
+    runId: String(row.run_id),
+    nodeId: String(row.node_id),
+    state: parseJson<Record<string, unknown>>(row.state_json as string, {}),
+    createdAt: String(row.created_at),
+  }))
 }
 
 export function updateRun(id: string, patch: Partial<Run>): void {

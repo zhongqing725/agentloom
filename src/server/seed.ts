@@ -678,6 +678,26 @@ export const WORKFLOW: Workflow = {
   },
 }
 
+/** A tiny nested workflow used by `subflow` nodes and the subflow smoke test. */
+export const SUBFLOW: Workflow = {
+  id: 'workflow-review',
+  projectId: PROJECT.id,
+  name: '单角色复核子流程',
+  description: '输入 → 首席分析师 → 输出，用于演示子工作流嵌套。',
+  graph: {
+    nodes: [
+      { id: 'input', type: 'input', position: { x: 0, y: 80 }, data: { label: '子流程输入', subtitle: '上游任务', kind: 'input' } },
+      { id: 'analyst', type: 'agent', position: { x: 220, y: 80 }, data: { label: '子流程分析师', subtitle: '复核', agentId: 'agent-analyst', kind: 'agent' } },
+      { id: 'output', type: 'output', position: { x: 440, y: 80 }, data: { label: '子流程输出', subtitle: '结果', kind: 'output' } },
+    ],
+    edges: [
+      { id: 'e-input-analyst', source: 'input', target: 'analyst', kind: 'flow' },
+      { id: 'e-analyst-output', source: 'analyst', target: 'output', kind: 'flow' },
+    ],
+  },
+  settings: { maxConcurrency: 1, budgetUsd: 0.2, maxLoop: 0, verifyThreshold: 0.5 },
+}
+
 export function seedDatabase(db: DatabaseSync) {
   const now = new Date().toISOString()
   db.prepare(
@@ -732,6 +752,18 @@ export function seedDatabase(db: DatabaseSync) {
     WORKFLOW.description,
     JSON.stringify(WORKFLOW.graph),
     JSON.stringify(WORKFLOW.settings),
+    now,
+    now,
+  )
+  db.prepare(
+    'INSERT INTO workflows (id, project_id, name, description, graph_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    SUBFLOW.id,
+    SUBFLOW.projectId,
+    SUBFLOW.name,
+    SUBFLOW.description,
+    JSON.stringify(SUBFLOW.graph),
+    JSON.stringify(SUBFLOW.settings),
     now,
     now,
   )

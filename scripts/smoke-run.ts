@@ -39,6 +39,10 @@ try {
   assert.ok(rejected.error, 'calculator must reject non-arithmetic input')
   const search = await invokeTool('knowledge_search', { query: '出货量' })
   assert.ok(Array.isArray(search.result) && search.result.length > 0, 'knowledge_search should hit the seed corpus')
+  assert.ok(
+    (search.result as Array<{ vectorScore?: number }>).some((hit) => typeof hit.vectorScore === 'number'),
+    'hybrid search should expose a vector score',
+  )
 
   const created = db.createRun('冒烟测试：验证回环、工具调用与终稿', 'mock')
   await executeRun(created.id)
@@ -62,6 +66,7 @@ try {
   assert.ok(latestNode('planner')?.output?.pluginReports?.some((report) => report.id === 'cognition.decompose'), 'planner should run 任务分解')
   assert.ok(latestNode('writer')?.output?.pluginReports?.some((report) => report.id === 'cognition.critique'), 'writer should run 自我批判')
   assert.ok((latestNode('verifier')?.output?.pluginReports?.length ?? 0) >= 3, 'verifier should run its three verification plugins')
+  assert.ok(db.listAgentMemory('agent-writer').length > 0, 'writer should persist short-term memory')
 
   console.log(
     `smoke ok · score=${run.score} · loops=${loops.length} · tools=${toolCalls.length} · tokens=${run.tokens}`,

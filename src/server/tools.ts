@@ -10,6 +10,7 @@
 import type { Agent, ToolCall } from '../shared/types.js'
 import { getDb, getProject } from './db.js'
 import { searchKnowledge } from './retrieval.js'
+import { callMcpTool, mcpToolSpecs } from './mcp.js'
 
 export interface ToolSpec {
   name: string
@@ -191,15 +192,17 @@ const knowledgeSearch: ToolSpec = {
     },
     required: ['query'],
   },
-  run(args) {
+  async run(args) {
     const query = String(args.query ?? '').trim()
     if (!query) throw new Error('query 不能为空。')
     const limit = Math.max(1, Math.min(Number(args.limit ?? 4), 6))
-    return searchKnowledge(getDb(), getProject().id, query, limit).map((hit) => ({
+    const hits = await searchKnowledge(getDb(), getProject().id, query, limit)
+    return hits.map((hit) => ({
       chunk: hit.chunkId,
       doc: hit.docTitle,
       text: hit.text.slice(0, 400),
       score: hit.score,
+      vectorScore: hit.vectorScore,
     }))
   },
 }
@@ -223,7 +226,10 @@ export function toolsForAgent(agent: Agent): ToolSpec[] {
   // UI toggles write both arrays, but older rows may only have one; accept either.
   const ids = new Set([...agent.tools, ...agent.plugins])
   const names = [...new Set([...ids].map((id) => AGENT_TOOL_IDS[id]).filter(Boolean))]
-  return names.map((name) => TOOL_REGISTRY[name]).filter(Boolean)
+  const local = names.map((name) => TOOL_REGISTRY[name]).filter(Boolean)
+  // MCP tools are configured globally; every agent can use them when the
+  // operator attaches an MCP server. No tools configured = no overhead.
+  return [...local, ...mcpToolSpecs()]
 }
 
 export function openAiTools(specs: ToolSpec[]) {
@@ -238,10 +244,10 @@ let counter = 0
 export async function invokeTool(name: string, args: Record<string, unknown>): Promise<ToolCall> {
   const started = Date.now()
   const id = `tool-${started.toString(36)}-${(counter += 1)}`
-  const spec = TOOL_REGISTRY[name]
+  const spec = TOOL_REGISTRY[name] ?? mcpToolSpecs().find((item) => item.name === name)
   if (!spec) return { id, name, args, error: `未知工具：${name}`, ms: 0 }
   try {
-    const result = await spec.run(args)
+    const result = name.startsWith('mcp__') ? await callMcpTool(name, args) : await spec.run(args)
     return { id, name, args, result, ms: Date.now() - started }
   } catch (error) {
     return { id, name, args, error: error instanceof Error ? error.message : String(error), ms: Date.now() - started }

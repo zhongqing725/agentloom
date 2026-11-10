@@ -8,3 +8,11 @@ data
 .screens
 .dsh-office-*
 .edge-*
+
+.vercel
+
+api
+deploy-log.txt
+build
+.tmp-deploy
+.tmp-vps
