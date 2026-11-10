@@ -82,6 +82,20 @@ Agent 节点 = 角色 + 模型 + 知识源 + 能力插件
 - 证据账本：逐条主张、引用原文、支持状态、核查结论与路由目标。
 - 默认最多回环 2 次，最终报告保留核查分与逐条结论。
 
+### 6. 记忆、条件分支与负载调度
+
+- **短期记忆**：每次节点完成后写入 SQLite `agent_memory`；下一轮按任务关键词召回最近 3 条，注入 Live prompt。`GET/POST/DELETE /api/agents/:id/memory` 可查看、手写、清空；团队页节点弹窗可直接操作。
+- **条件分支**：`condition` 节点读取上游输出路径（如 `verdict.score`），按 `gte / lte / eq` 判定；出边标记 `condition: true|false`，调度器只走命中分支，未命中的节点标记 `skipped` 并解除下游阻塞。画布可新建/编辑条件。
+- **子工作流**：`subflow` 节点引用另一张 workflow，执行独立 child Run（最多 2 层）；父节点输出带 `subflowRunId`。
+- **负载调度**：每个 Agent 有 `capacity`；就绪队列按“关键路径深度 → 当前 Agent 负载 → 画布 x”排序，容量满时等待。`node.queued` 事件带 `agentLoad` / `agentCapacity`，可在事件流里核对。
+- **人工干预**：运行可暂停/继续；每个节点完成写 checkpoint，`GET /api/runs/:id/checkpoints` 可查。不是完整审批流，也不是任意 checkpoint 回滚。
+
+### 7. MCP / A2A / 混合检索
+
+- **MCP**：内置 stdio 客户端，支持 `initialize`、`tools/list`、`tools/call`。用 `AGENTLOOM_MCP_SERVERS` 配置外部 MCP 服务，工具自动进入同一套 Function Calling；`scripts/mcp-demo-server.mjs` 是可运行的示例。
+- **A2A**：`/.well-known/agent.json` 提供 Agent Card；`POST /a2a` 支持 JSON-RPC `message/send`、`tasks/get`、`tasks/cancel`，可被其他 Agent 发现并委派任务。
+- **混合检索**：BM25 + SQLite `chunk_vectors` 向量余弦；`knowledge_search` 返回 `score` 与 `vectorScore`。默认使用 192 维特征哈希；配置 `AGENTLOOM_EMBEDDING_URL` / `AGENTLOOM_EMBEDDING_MODEL` / `AGENTLOOM_EMBEDDING_API_KEY` 后自动调用 OpenAI-compatible `/embeddings`，把 `chunk_vectors` 升级为神经 embedding，失败回退哈希。
+
 演示运行的真实轨迹：
 
 ```text
@@ -116,8 +130,15 @@ pnpm start
 
 ```bash
 pnpm typecheck
-pnpm smoke      # 临时库跑完整 Mock 流程：回环 + 工具调用 + 终稿引用
+pnpm smoke:all   # 主流程 + 条件分支 + 子流程 + MCP stdio
 pnpm build
+```
+
+压力与真实模型证据（需要服务已启动）：
+
+```bash
+pnpm stress                 # Mock 并发/延迟，写入 docs/stress-report.md
+pnpm live-evidence          # 需要 AGENTLOOM_API_KEY；有 Key 会跑真实任务
 ```
 
 如果 5173 页面显示成无样式的裸 HTML，通常是旧的 Vite 进程在 `postcss.config.mjs` 出现之前启动的；重启 `dev:web` 即可，不需要改页面代码。
@@ -132,10 +153,13 @@ pnpm build
 AGENTLOOM_API_KEY=sk-...
 AGENTLOOM_BASE_URL=https://api.deepseek.com/v1
 AGENTLOOM_MODEL=deepseek-chat
+AGENTLOOM_LIVE_MAX_LOOP=1
 pnpm dev
 ```
 
 设置页保存的 Key 只存在当前服务进程内，不写入数据库；重启服务后按环境变量重新判断模式。
+
+神经向量（可选）：配置 `AGENTLOOM_EMBEDDING_URL`（OpenAI-compatible `/embeddings`）、`AGENTLOOM_EMBEDDING_MODEL`、`AGENTLOOM_EMBEDDING_API_KEY` 后，首次检索会把 `chunk_vectors` 升级为真实 embedding；失败自动回退特征哈希。
 
 Live 模式下，`Agent.tools` 里的工具会以 OpenAI `tools` 协议下发给模型，模型返回 `tool_calls` 后由本地注册表执行；Mock 模式直接执行同一套工具，因此离线演示也能看到真实的工具轨迹。
 
@@ -184,6 +208,7 @@ Live 模式下，`Agent.tools` 里的工具会以 OpenAI `tools` 协议下发给
 | 项目介绍 PPT（PPTX / PDF） | `deliverables/织序AgentLoom-项目介绍.pptx` / `.pdf` |
 | 3 分钟演示脚本 | [docs/demo-script.md](docs/demo-script.md) |
 | 技术架构 | [docs/architecture.md](docs/architecture.md) |
+| 赛题一能力对照 | [docs/track1-compliance.md](docs/track1-compliance.md) |
 | 验证与工具证据 | [docs/verification.md](docs/verification.md) |
 | 当前 UI 截图 | [docs/boardui/](docs/boardui/) |
 | 白皮书源稿 | [docs/white-paper.md](docs/white-paper.md) |
@@ -201,12 +226,14 @@ src/
   server/
     engine.ts      调度器、DAG 执行、Self-Loop、工具事件
     llm.ts         Mock / DeepSeek 适配、function calling、发散、核查
-    tools.ts       工具注册表：calculator / knowledge_search
+    tools.ts       工具注册表：calculator / knowledge_search / data_stats / browser_fetch
+    mcp.ts         MCP stdio 客户端（tools/list、tools/call）
+    a2a.ts         A2A Agent Card + message/send + tasks/get
     entailment.ts  四态主张判定
     trainer.ts     提示词候选训练与版本启用
-    retrieval.ts   中文 BM25
+    retrieval.ts   中文 BM25 + 轻量向量索引
     seed.ts        演示知识库、Agent、插件、工作流
-    db.ts          SQLite 数据访问
+    db.ts          SQLite 数据访问、记忆、向量、容量
     index.ts       Fastify API + SSE
   web/
     App.tsx        应用 shell、导航、运行/设置 Modal
@@ -222,8 +249,13 @@ docs/
   README.md        文档索引
   architecture.md  技术架构
   verification.md  验证与工具证据
+  stress-report.md 压力/并发测试报告
+  live-evidence.md Live 模型证据（有 Key 时生成）
   demo-script.md   3 分钟演示脚本
   boardui/         当前 UI 截图（桌面 3 / 移动 1）
+  mcp-demo-server.mjs  MCP 示例服务
+  stress-run.mjs       压力测试
+  live-evidence.mjs    Live 证据采集
 boardui.json       BoardUI 路径/别名配置
 postcss.config.mjs Tailwind v4 PostCSS 配置
 ```
@@ -236,11 +268,18 @@ postcss.config.mjs Tailwind v4 PostCSS 配置
 
 ## 当前边界
 
-- 14 个插件都有运行时；工具侧有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`。`tool.python` 是受限统计，不执行任意代码；MCP 客户端是下一步。
+- 14 个插件都有运行时；工具侧有 `calculator`、`knowledge_search`、`data_stats`、`browser_fetch`。`tool.python` 是受限统计，不执行任意代码。
+- MCP 是 stdio 客户端，需要外部 MCP 服务；默认不启动。A2A 是可运行的兼容子集（Agent Card + message/send + tasks/get + tasks/cancel），不是完整 A2A SDK。
+- 条件节点支持单条件与 true/false 两路，不支持 and/or 组合表达式；画布可新建/编辑。
+- 子工作流通过 child Run 执行，最多 2 层；画布可插入，模板通过 seed/API 配置，暂无模板编辑器。
+- 运行支持暂停/继续与 checkpoint 记录，但没有回滚到任意 checkpoint 的恢复执行。
+- 混合检索默认是 192 维特征哈希；配置 `AGENTLOOM_EMBEDDING_URL` 后切换为 OpenAI-compatible 神经 embedding，API 失败自动回退哈希。
 - `browser_fetch` 需要外网，且只允许公开 http(s) 地址；Demo 里默认不挂到主流程，避免现场网络抖动。
 - 知识库支持 Markdown / TXT / PDF；扫描件没有文字层会被拒绝，OCR 不在范围内。
 - 当前只有一张演示工作流；多项目、多工作流选择、认证、多租户、插件市场不在本届 MVP。
-- Mock 模式的 Token 与成本为模拟计量，用于演示口径；`pnpm smoke` 使用临时库，不会污染演示数据。
+- Mock 模式的 Token 与成本为模拟计量；Live 真实模型 3/3 通过：**`run-56f27e37` / `run-8eebae66` / `run-c6d116ac` 均 1.0**（17+3、16+6、19+8 条主张，0 条越证断言），142–328 秒、$0.043–0.071、20–44 次工具调用。核查分口径是「真正断言了事实的主张里，有多少被引用坐实」，已声明为证据缺口的主张只披露、不计入分母（否则越诚实分越低）；断言数为 0 直接判 0 分。Mock 的 1.0 是固定剧本，两者不要混说。
+- Live 默认 `AGENTLOOM_LIVE_MAX_LOOP=1`，避免现场多跑一轮；工具调用已限制每 hop 6 次、每节点 12 次。
+- 压力测试是单进程 Mock 基线；并发能力受 Node 单进程和 SQLite 限制，不是生产级分布式调度。
 
 ## 赛事信息
 

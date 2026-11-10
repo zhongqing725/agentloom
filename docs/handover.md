@@ -1,11 +1,12 @@
 # 织序 AgentLoom — 交接说明
 
-更新：2026-11-08
+更新：2026-11-10
 
 当前分支：`ui/swiss-redesign`
 
 最后提交：`b7d4aff`（工具运行时、全部插件运行时、四态核查、运行图快照、团队角色可用化、仓库清理）。
-状态：工作区干净；`pnpm typecheck` / `pnpm smoke` / `pnpm build` 通过。
+状态：工作区有未提交增量；`pnpm typecheck` / `pnpm smoke:all` / `pnpm build` 通过。
+2026-11-10 增量：短期记忆、条件分支（画布可新建/编辑）、子工作流嵌套、负载/容量调度、BM25+哈希向量混合检索、MCP stdio 客户端、A2A 兼容端点（send/get/cancel）、运行暂停/继续与 checkpoint、压力测试、Live 证据采集脚本。
 
 > 接手顺序：先读本文 → `docs/architecture.md` → `docs/verification.md` → `README.md`。
 > 视觉验收图片在 `docs/boardui/`，旧版提交材料在 `deliverables/`。
@@ -17,7 +18,9 @@
 - 6 篇模拟知识资料，14 个 Agent 角色（默认工作流用 8 个）；其余角色可在「添加 Agent → 团队库」直接插入，不新建 Agent。
 - 三路研究并行，首席分析师展开三视角并调用 `calculator`，核查员失败后按问题类型路由并回环。
 - 知识库支持 MD / TXT / PDF；文档带来源链接、类型与发布时间。
-- 工具运行时：`calculator` + `knowledge_search`；Mock 模式也真执行，事件流可见 `tool.call` / `tool.result`。
+- 工具运行时：`calculator` / `knowledge_search` / `data_stats` / `browser_fetch`；Mock 模式也真执行，事件流可见 `tool.call` / `tool.result`。
+- 扩展：短期记忆（`agent_memory`）、条件节点（`condition`）、Agent 容量与负载调度、`chunk_vectors` 混合检索、MCP stdio、A2A `message/send` / `tasks/get`。
+- 证据：`pnpm smoke:all`、`pnpm stress`、`pnpm live-evidence`；报告在 `docs/stress-report.md` / `docs/live-evidence.md`。
 - 验证：四态蕴含 v2；42 条手标难例准确率 88%，`supported` F1 100%，见 [verification.md](./verification.md)。
 - 训练：5 个提示词候选 + 固定评测集 + 版本启用/回滚，见 `/training`。
 - 前端：React 19 + Vite 7 + TypeScript + React Router 7 + React Flow + BoardUI 源组件 + Tailwind CSS v4（PostCSS）。

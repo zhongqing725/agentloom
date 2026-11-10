@@ -175,6 +175,21 @@ hooks:
 - **可观察**：每次调用写 `tool.call` 与 `tool.result` 事件，参数、结果、耗时、错误都可回放；完整调用保存在 `NodeOutput.toolCalls`。
 - **失败处理**：工具错误不会让节点崩溃，错误信息进入事件流与模型上下文。
 
+### 4.6 记忆、条件分支、负载调度
+
+- **记忆**：`agent_memory` 保存每次节点完成的 600 字摘要；`recallAgentMemory` 按任务关键词重叠召回最近 3 条，注入 Live prompt。`GET/POST/DELETE /api/agents/:id/memory` 可查看、手写、清空；手动写入的 `runId=manual`。
+- **条件分支**：`NodeKind=condition`，节点数据 `condition: { sourceNodeId, path, op, value }`；出边 `condition: 'true' | 'false'`。调度器执行后计算命中分支的可达集，把未命中且不在命中集里的 pending 节点标记 `skipped`，依赖检查把 `skipped` 视为已满足。
+- **负载调度**：`Agent.capacity` 是同一 Agent 的并发上限；就绪排序为 `depth 降序 → agentLoad 升序 → x 升序`，容量满的节点留在 pending。`node.queued` 事件带 `agentLoad` / `agentCapacity`，可回放调度决策。
+- **子工作流**：`subflow` 节点用 `data.subflowWorkflowId` 引用 `workflows` 表中的另一张图，父节点创建 child Run 并等待完成；最多 2 层，父输出带 `subflowRunId`。
+- **人工干预与 checkpoint**：`POST /api/runs/:id/pause|resume` 在调度循环边界暂停/继续；每个节点完成后写 `run_checkpoints`（节点状态、输出、iteration、feedback、成本/Token），`GET /api/runs/:id/checkpoints` 可查。没有回滚到任意 checkpoint 的恢复执行。
+- **边界**：条件节点的可视化新建/编辑表单还没做完整；当前通过画布 JSON 或 API 写入。负载调度只做节点级容量，不做跨机负载均衡。
+
+### 4.7 MCP / A2A / 向量索引
+
+- **MCP stdio**：`mcp.ts` 启动 `AGENTLOOM_MCP_SERVERS` 配置的子进程，完成 `initialize` → `notifications/initialized` → `tools/list`；工具名 `mcp__<server>__<tool>` 进入同一套 `ToolSpec`，Live 下发给模型，Mock 也真执行。`scripts/mcp-demo-server.mjs` 提供 `now` / `echo` 示例。
+- **A2A**：`/.well-known/agent.json` 返回 Agent Card；`POST /a2a` 支持 JSON-RPC `message/send` 与 `tasks/get`。`message/send` 创建 Run 并立即返回 task，`tasks/get` 返回状态与最终报告 artifact。
+- **向量索引**：`chunk_vectors` 存 192 维特征哈希向量；`searchKnowledge` 用 `BM25 + 0.75 * cosine` 排序，`SearchHit.vectorScore` 暴露相似度。配置 `AGENTLOOM_EMBEDDING_URL` 时，首次检索会调用 OpenAI-compatible `/embeddings` 重建全部 chunk 向量并写入 `vector_meta`；API 失败回退哈希。
+
 ## 5. 验证算法
 
 `deterministicVerdict` 的核查范围是**事实性章节**（核心结论、市场、产业链、竞争），不包含明确标注为“情景假设”的第五部分和规范性建议。
@@ -205,7 +220,8 @@ Live 模式会优先让模型核查，解析失败时回退到同一套规则核
 - 切分：按 `##` 章节切分；单节超过 340 字时按句切到约 300 字。
 - 索引：SQLite `chunks` 表；检索时在内存中计算 BM25。
 - 分词：`Intl.Segmenter('zh-CN')` 词级分词 + 中文双字回退 + 英文/数字 token。
-- 排序：BM25（k1=1.5, b=0.75），同文档最多 6 个片段。
+- 排序：BM25（k1=1.5, b=0.75）+ 0.75 × 向量余弦；同文档最多 6 个片段。
+- 向量：`chunk_vectors` + `vector_meta`；默认 192 维特征哈希，配置 `AGENTLOOM_EMBEDDING_URL` 后升级为 OpenAI-compatible embedding，失败回退。`SearchHit.vectorScore` 可观测。
 - 引用：研究员按角度加前缀（M/L/C），并按目标文档的 chunk 顺序稳定编号。
 - 目的：让报告中的 `[M2]` 在多次运行中保持可解释，而不是随机映射。
 
@@ -221,10 +237,17 @@ Live 模式会优先让模型核查，解析失败时回退到同一套规则核
 | GET | `/api/runs/:id/events` | SSE 实时事件（含历史回放） |
 | GET | `/api/runs/:id/report` | 下载 Markdown 报告 |
 | POST | `/api/runs/:id/cancel` | 取消运行 |
+| POST | `/api/runs/:id/pause` / `/resume` | 暂停 / 继续运行 |
+| GET | `/api/runs/:id/checkpoints` | 运行 checkpoint 列表 |
+| GET | `/api/workflows` | 工作流模板列表（含子流程模板） |
 | POST | `/api/kb/search` | BM25 检索测试 |
 | POST | `/api/documents` | JSON 或 multipart 入库（MD / TXT / PDF） |
 | POST | `/api/agents` | 创建按需专家节点（specialist） |
-| PUT | `/api/agents/:id` | 修改模型 / 温度 / 提示词 / 工具 / 插件 |
+| PUT | `/api/agents/:id` | 修改模型 / 温度 / 提示词 / 工具 / 插件 / 容量 |
+| GET/POST/DELETE | `/api/agents/:id/memory` | 查看 / 写入 / 清空短期记忆 |
+| GET | `/api/health` | 健康检查 + MCP 连接状态 |
+| GET | `/.well-known/agent.json` | A2A Agent Card |
+| POST | `/a2a` | A2A JSON-RPC：`message/send` / `tasks/get` |
 | PUT | `/api/workflow` | 保存画布位置与调度设置 |
 | GET / POST | `/api/training` | 读取评测集/版本，或启动一次训练 |
 | GET | `/api/training/:id` | 训练进度与候选分数 |
@@ -238,7 +261,7 @@ Live 模式会优先让模型核查，解析失败时回退到同一套规则核
 - `runs.graph_json` 在创建运行时保存当时的 workflow 快照；运行页优先用快照回放，旧运行没有快照时回退当前图。
 - 每个节点执行产生一条 `node_runs`，回环会产生多条，`iteration` 区分。
 - UI 的“节点轨迹”取每个节点的最新一次 `node_run`；核查页保留全部轮次。
-- 事件类型：`run.started`、`node.queued`、`node.started`、`node.branch`、`node.merge`、`tool.call`、`tool.result`、`node.completed`、`node.retry`、`verify.failed`、`loop.triggered`、`run.completed`。
+- 事件类型：`run.started`、`node.queued`、`node.started`、`node.branch`、`node.merge`、`tool.call`、`tool.result`、`node.completed`、`node.skipped`、`node.retry`、`verify.failed`、`loop.triggered`、`run.completed`。
 
 ## 9. 评测
 

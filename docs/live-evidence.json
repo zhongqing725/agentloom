@@ -1,0 +1,37 @@
+{
+  "base": "http://127.0.0.1:8787",
+  "model": "deepseek-chat",
+  "runs": [
+    {
+      "id": "run-56f27e37",
+      "status": "completed",
+      "ms": 211385,
+      "score": 1,
+      "loops": 0,
+      "tokens": 145887,
+      "cost": 0.04381,
+      "toolCalls": 20
+    },
+    {
+      "id": "run-8eebae66",
+      "status": "completed",
+      "ms": 327588,
+      "score": 1,
+      "loops": 1,
+      "tokens": 258875,
+      "cost": 0.07133,
+      "toolCalls": 38
+    },
+    {
+      "id": "run-c6d116ac",
+      "status": "completed",
+      "ms": 142204,
+      "score": 1,
+      "loops": 0,
+      "tokens": 154641,
+      "cost": 0.0435,
+      "toolCalls": 44
+    }
+  ],
+  "generatedAt": "2026-11-10T09:12:37.334Z"
+}

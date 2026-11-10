@@ -6,8 +6,9 @@
 |---|---|---|
 | [交接说明](./handover.md) | 接手开发/运维 | 当前状态、启动、代码地图、验证基线、风险、交接清单 |
 | [项目 README](../README.md) | 所有人 | 项目定位、能力、快速开始、提交材料 |
-| [技术架构](./architecture.md) | 后端/Agent 工程师 | 领域模型、调度、Self-Loop、插件、工具运行时、API、数据与安全边界 |
-| [验证与工具证据](./verification.md) | 评委/评审/答辩 | 主张判定基准、端到端冒烟、工具轨迹、复跑命令 |
+| [技术架构](./architecture.md) | 后端/Agent 工程师 | 领域模型、调度、Self-Loop、插件、工具运行时、MCP/A2A、记忆、条件分支、API、数据与安全边界 |
+| [验证与工具证据](./verification.md) | 评委/评审/答辩 | 主张判定基准、端到端冒烟、工具轨迹、压力测试、Live 证据、复跑命令 |
+| [赛题一能力对照](./track1-compliance.md) | 评委/答辩 | 赛题要求逐条对照、证据、边界 |
 
 ## 提交材料
 
@@ -30,7 +31,7 @@
 - 技术栈：React 19 + Vite 7 + TypeScript + React Router 7 + React Flow + BoardUI 源组件 + Tailwind CSS v4（PostCSS）；Fastify 5 + SQLite + SSE。
 - 开发入口：`pnpm dev` → Web 5173 / API 8787。
 - 生产预览：`pnpm build && pnpm start` → 8787。
-- 验证：`pnpm typecheck && pnpm smoke`；主张基准见 [verification.md](./verification.md)。
+- 验证：`pnpm typecheck && pnpm smoke:all`；压力 `pnpm stress`；Live `pnpm live-evidence`。主张基准见 [verification.md](./verification.md)。
 - 重置演示数据：先停服务，再 `pnpm reset`。
 - 当前分支：`ui/swiss-redesign`。
 - 详细风险与操作注意事项见 [交接说明](./handover.md)。

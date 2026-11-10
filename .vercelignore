@@ -1,0 +1,7 @@
+﻿node_modules
+data
+docs
+deliverables
+.screens
+dist/web-backup-*
+*.log
