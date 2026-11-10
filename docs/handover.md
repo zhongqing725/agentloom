@@ -220,7 +220,7 @@ pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 2. **BoardUI CLI registry**：本机 DNS 无法访问 BoardUI registry；当前源文件已落盘，CLI 重新 add 前需恢复网络。
 3. **Dark mode 未启用**：token 支持 `.dark`，但产品只交付浅色界面，没有切换入口。
 4. **移动画布**：390px 使用 0.62 初始缩放 + 平移，不自动 fit 全图；桌面检查器打开时会自动平移选中节点，移动端为底部抽屉。
-5. **真实模型**：Mock 流程已验收；Live 的 function calling 工具循环只做了代码路径，未用真实 Key 回归延迟、工具调用失败与成本。
+5. **真实模型**：Live 已用真实 Key 跑通 3/3（见 `docs/live-evidence.md`）：1.0 / 142–328 秒 / $0.043–0.071；核查分只统计断言主张，显式缺口不进分母。现场仍建议 Mock，避免余额与网络风险。
 6. **截图与最新代码差异大**：Home 改版、训练页、工具事件都没有进入 `docs/boardui` 截图；正式提交前重新截取首页、编排、运行事件流、训练页。
 7. **开发服务缓存**：Vite 在启动时读取 `postcss.config.mjs`。如果页面显示无样式裸 HTML，先重启 5173 的 Vite 进程，而不是改页面代码。
 8. **提交材料仍是 11/5 版式**：数字与“工具运行时/四态核查”附录已在 11/8 补进 DOCX/PPTX/PDF，但截图仍是旧界面，团队信息仍是占位；提交前用 `.screens/` 新截图重新导出并替换团队信息。
@@ -250,3 +250,19 @@ pnpm build      # 通过（Vite 仅有 >500 kB chunk 提示）
 - [白皮书源稿](./white-paper.md)
 - [当前 UI 截图](./boardui/)
 - [项目 README](../README.md)
+
+## 13. 部署到 VPS（103.68.192.80）
+
+SSH 端口 10898，只开放密码认证（`~/.ssh/agentloom_vps` 那把 key 服务端不收）。
+
+```bash
+pnpm build && node scripts/build-server.mjs
+# 打包 server.mjs + dist/ 成 tar（解到 /opt/agentloom，保留 data/）
+scp -P 10898 agentloom-deploy.tar.gz .deploy/setup.sh root@103.68.192.80:/tmp/
+ssh -p 10898 root@103.68.192.80 "bash /tmp/setup.sh"
+```
+
+- `setup.sh` 会重写 systemd unit、`systemctl restart agentloom`，只删 `/opt/agentloom/dist`，`data/` 里的库和运行记录保留。
+- 长期 Live 把 `AGENTLOOM_API_KEY=...` 写进 `/opt/agentloom/.env`（unit 里已加 `EnvironmentFile=-/opt/agentloom/.env`）；设置页填的 Key 只改 `process.env`，重启即丢。
+- 部署后用 `curl -s http://103.68.192.80/api/config` 确认 `hasKey` 与 `mode`，再抓首页看 asset hash 是否换新。
+- 公开实例建议留在 Mock：带 Key 的 Live 会被任何人点一次就跑一次，费用不可控。

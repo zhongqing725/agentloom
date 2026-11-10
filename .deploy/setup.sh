@@ -18,6 +18,9 @@ WorkingDirectory=/opt/agentloom
 Environment=PORT=80
 Environment=HOST=0.0.0.0
 Environment=AGENTLOOM_DB=/opt/agentloom/data/agentloom.db
+# 可选：/opt/agentloom/.env 里放 AGENTLOOM_API_KEY 等变量。
+# 设置页里填的 Key 只改 process.env，重启就丢；要长期 Live 就写这个文件。
+EnvironmentFile=-/opt/agentloom/.env
 ExecStart=/usr/local/bin/node /opt/agentloom/server.mjs
 Restart=always
 RestartSec=2
