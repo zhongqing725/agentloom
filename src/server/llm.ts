@@ -1,7 +1,8 @@
-import type { Agent, Candidate, Citation, Mode, NodeOutput, ToolCall, Usage, Verdict, VerdictRoute } from '../shared/types.js'
+import type { Agent, Candidate, Citation, Mode, NodeOutput, ToolCall, Usage, Verdict, VerdictRoute, WikiFact, WikiSnapshot } from '../shared/types.js'
 import { firstSentences, tokenize } from './retrieval.js'
 import { classifyClaim, type ClaimVerdict } from './entailment.js'
 import { invokeTool, openAiTools, toolsForAgent } from './tools.js'
+import { coverageCheck, conflictCheck, containsValue, wikiCheck } from './wiki.js'
 
 export interface Evidence {
   ref: string
@@ -23,6 +24,8 @@ export interface AgentContext {
   mode: Mode
   /** Recalled short-term notes from previous runs. */
   memory?: string[]
+  /** Rule-compiled fact cards; present when the wiki layer is available. */
+  wiki?: WikiSnapshot
 }
 
 const ANGLE_KEYWORDS: Record<string, string[]> = {
@@ -548,19 +551,28 @@ function mockWriter(ctx: AgentContext): NodeOutput {
       ? reportV2(ctx)
       : reportV1(ctx)
     : mockEvidenceReport(ctx)
-  const markdown = applyWriterConstraints(draft, ctx.agent.systemPrompt, citations)
+  const base = applyWriterConstraints(draft, ctx.agent.systemPrompt, citations)
+  const revision = ctx.iteration > 0 || Boolean(ctx.feedback)
+  const supplement = revision ? buildWikiSupplement(ctx, base) : { block: '', citations: [] as Citation[] }
+  const markdown = supplement.block
+    ? base.includes('## 五、三种情景')
+      ? base.replace('## 五、三种情景', `${supplement.block}\n\n## 五、三种情景`)
+      : `${base}\n\n${supplement.block}`
+    : base
+  const allRefs = [...citations, ...supplement.citations]
   const data = {
     markdown,
     version: ctx.iteration > 0 ? 'v2' : 'v1',
     wordCount: markdown.length,
-    citationCount: citations.length,
+    citationCount: allRefs.length,
     appliedFeedback: Boolean(ctx.feedback),
+    supplemented: supplement.citations.length,
   }
   return {
     text: markdown,
     markdown,
     data,
-    citations,
+    citations: allRefs,
     usage: usageOf(ctx.agent.systemPrompt + JSON.stringify(ctx.upstream.map((item) => item.output.data)), markdown),
   }
 }
@@ -681,10 +693,106 @@ function deterministicVerdict(markdown: string, citations: Citation[], threshold
   }
 }
 
+function wikiEnabled(ctx: AgentContext): boolean {
+  return Boolean(ctx.wiki) && ctx.agent.plugins.includes('verify.coverage')
+}
+
+/**
+ * Merge the rule-compiled wiki checks into a citation verdict. Every dimension
+ * must clear the same threshold, so a report can no longer pass on citations
+ * alone while ignoring half the evidence.
+ */
+function withWikiVerdict(base: Verdict, ctx: AgentContext, markdown: string, threshold: number): Verdict {
+  if (!wikiEnabled(ctx) || !ctx.wiki) return base
+  const check = wikiCheck(markdown, ctx.wiki, base.score)
+  const routes: VerdictRoute[] = [...(base.routes ?? [])]
+  const issues = [...base.issues]
+
+  for (const item of check.coverage.missing) {
+    const label = `${item.metric}${item.subject ? `（${item.subject}）` : ''} ${item.value}${item.unit}${item.year ? `（${item.year}）` : ''}`
+    issues.push(`报告漏掉了${item.angle}页的关键事实：${label}。`)
+    routes.push({ type: 'coverage', target: 'writer', message: `补充${item.angle}页的关键事实：${label}。` })
+  }
+  for (const item of check.conflicts.unhandled) {
+    const label = `${item.metric}${item.subject ? `（${item.subject}）` : ''}`
+    const values = item.values.map((value) => `${value.value}${item.unit}`).join(' / ')
+    issues.push(`资料对${label}存在分歧（${values}），报告没有说明口径差异。`)
+    routes.push({ type: 'conflict', target: 'analyst', message: `说明${label}的口径差异：${values}。` })
+  }
+
+  const dimensions = check.dimensions
+  return {
+    ...base,
+    passed:
+      dimensions.citations >= threshold && dimensions.coverage >= threshold && dimensions.conflicts >= threshold,
+    score: Number(((dimensions.citations + dimensions.coverage + dimensions.conflicts) / 3).toFixed(2)),
+    issues,
+    routes,
+    dimensions,
+    coverage: check.coverage,
+    conflicts: check.conflicts,
+  }
+}
+
+function citationFor(sentence: string, docId: string, docTitle: string, citations: Citation[], minted: Citation[]): Citation {
+  const existing = [...citations, ...minted].find(
+    (item) => item.quote.includes(sentence) || (item.quote.length > 12 && sentence.includes(item.quote)),
+  )
+  if (existing) return existing
+  let index = minted.length + 1
+  while (citations.some((item) => item.id === `W${index}`) || minted.some((item) => item.id === `W${index}`)) index += 1
+  const citation: Citation = { id: `W${index}`, docId, docTitle, quote: sentence }
+  minted.push(citation)
+  return citation
+}
+
+const amount = (value: string, unit: string) => (unit === '%' ? `${value}%` : `${value} ${unit}`)
+
+/** Round 2 fills coverage gaps and states conflicting figures with their sources. */
+function buildWikiSupplement(ctx: AgentContext, markdown: string): { block: string; citations: Citation[] } {
+  if (!ctx.wiki) return { block: '', citations: [] }
+  const citations = allCitations(ctx)
+  const minted: Citation[] = []
+  const lines: string[] = []
+
+  for (const item of coverageCheck(markdown, ctx.wiki.facts).missing) {
+    const fact = ctx.wiki.facts.find((entry) => entry.id === item.factId)
+    if (!fact) continue
+    const ref = citationFor(fact.sentence, fact.docId, fact.docTitle, citations, minted)
+    lines.push(
+      `${item.metric}${item.subject ? `（${item.subject}）` : ''}：${item.year ? `${item.year} 年 ` : ''}${amount(item.value, item.unit)} [${ref.id}]。`,
+    )
+  }
+
+  for (const item of conflictCheck(markdown, ctx.wiki.conflicts).unhandled) {
+    const facts = item.values
+      .map((value) => ctx.wiki!.facts.find((entry) => entry.id === value.factId))
+      .filter((entry): entry is WikiFact => Boolean(entry))
+    if (facts.length < 2) continue
+    const used = (fact: WikiFact) =>
+      markdown
+        .split(/(?<=[。！？])/)
+        .some((sentence) => sentence.includes(fact.metric) && containsValue(sentence, fact.value))
+    const primary = facts.find(used) ?? facts[0]
+    const secondary = facts.find((fact) => fact !== primary) ?? facts[1]
+    const primaryRef = citationFor(primary.sentence, primary.docId, primary.docTitle, citations, minted)
+    const secondaryRef = citationFor(secondary.sentence, secondary.docId, secondary.docTitle, citations, minted)
+    lines.push(
+      `${item.metric}${item.subject ? `（${item.subject}）` : ''}：${amount(primary.value, item.unit)} [${primaryRef.id}]。`,
+    )
+    lines.push(
+      `另有机构的${item.metric}为 ${amount(secondary.value, item.unit)}，两家口径存在差异 [${secondaryRef.id}]。`,
+    )
+  }
+
+  if (lines.length === 0) return { block: '', citations: [] }
+  return { block: `## 口径差异与关键事实补录\n\n${lines.join('\n')}`, citations: minted }
+}
+
 function mockVerifier(ctx: AgentContext, threshold: number): NodeOutput {
   const writer = ctx.upstream.find((item) => item.nodeId === 'writer')?.output ?? lastMarkdown(ctx)
   const markdown = writer?.markdown ?? writer?.text ?? ''
-  const verdict = deterministicVerdict(markdown, allCitations(ctx), threshold)
+  const verdict = withWikiVerdict(deterministicVerdict(markdown, allCitations(ctx), threshold), ctx, markdown, threshold)
   const text = asJson(verdict)
   return {
     text,
@@ -985,13 +1093,18 @@ async function liveVerifier(ctx: AgentContext, threshold: number): Promise<NodeO
       const issues = parsed.issues ?? []
       const claims = parsed.claims ?? []
       const score = scoreFromClaims(claims) ?? Number(parsed.score.toFixed(2))
-      const verdict: Verdict = {
-        passed: score >= threshold,
-        score,
-        issues,
-        routes: parsed.routes?.length ? parsed.routes : routesFromClaims(claims, issues),
-        claims,
-      }
+      const verdict: Verdict = withWikiVerdict(
+        {
+          passed: score >= threshold,
+          score,
+          issues,
+          routes: parsed.routes?.length ? parsed.routes : routesFromClaims(claims, issues),
+          claims,
+        },
+        ctx,
+        markdown,
+        threshold,
+      )
       return {
         text: result.text,
         data: verdict as unknown as Record<string, unknown>,
@@ -1013,7 +1126,7 @@ const COGNITION_PLUGINS = new Set([
   'cognition.strawman',
   'cognition.debate',
 ])
-const VERIFY_PLUGINS = new Set(['verify.citations', 'verify.numbers', 'verify.entailment'])
+const VERIFY_PLUGINS = new Set(['verify.citations', 'verify.numbers', 'verify.entailment', 'verify.coverage'])
 const KNOWLEDGE_PLUGINS = new Set(['knowledge.graph', 'knowledge.freshness'])
 
 const PLUGIN_TITLES: Record<string, string> = {
@@ -1025,6 +1138,7 @@ const PLUGIN_TITLES: Record<string, string> = {
   'verify.citations': '引用核验',
   'verify.numbers': '数值一致性',
   'verify.entailment': '蕴含判定',
+  'verify.coverage': '覆盖与冲突核验',
   'knowledge.graph': '邻居扩展',
   'knowledge.freshness': '时效排序',
 }
@@ -1081,6 +1195,13 @@ function mockPluginText(ctx: AgentContext, id: string, output: NodeOutput): stri
   }
   if (id === 'knowledge.freshness') {
     return `时效排序：按文档发布时间重排 ${ctx.evidence.length} 条证据，越新的资料优先级越高。`
+  }
+  if (id === 'verify.coverage') {
+    const dims = verdict.dimensions
+    if (!dims) return '覆盖与冲突核验未执行：知识库还没有编译出事实卡。'
+    const missing = verdict.coverage?.missing.length ?? 0
+    const unhandled = verdict.conflicts?.unhandled.length ?? 0
+    return `覆盖 ${Math.round(dims.coverage * 100)}%（漏 ${missing} 条关键事实）、冲突说明 ${Math.round(dims.conflicts * 100)}%（${unhandled} 处未说明口径差异）。`
   }
   if (id === 'verify.numbers') {
     const missing = numericAudit(markdown, citations)

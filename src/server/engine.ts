@@ -1,7 +1,8 @@
-import type { GraphNode, NodeOutput, NodeStatus, Usage, VerdictRoute } from '../shared/types.js'
+import type { GraphNode, NodeOutput, NodeStatus, Usage, Verdict, VerdictRoute } from '../shared/types.js'
 import type { AgentContext, Evidence } from './llm.js'
 import { runAgentNode, runDiverge } from './llm.js'
 import { searchKnowledge } from './retrieval.js'
+import { loadWikiSnapshot } from './wiki.js'
 import {
   appendEvent,
   createNodeRun,
@@ -84,6 +85,7 @@ export async function executeRun(runId: string, runDepth = 0): Promise<void> {
   const workflow = getWorkflowById(run.workflowId) ?? getWorkflow()
   const agents = listAgents()
   const project = getProject()
+  const wiki = loadWikiSnapshot(getDb(), project.id)
   const threshold = workflow.settings.verifyThreshold
   const liveMaxLoop = Number(process.env.AGENTLOOM_LIVE_MAX_LOOP ?? 1)
   const maxLoop =
@@ -225,9 +227,27 @@ export async function executeRun(runId: string, runDepth = 0): Promise<void> {
     return affected
   }
 
-  const chooseRoute = (routes: VerdictRoute[]): VerdictRoute | undefined => {
-    const priority: Record<string, number> = { citation: 5, number: 4, logic: 3, coverage: 2, wording: 1, other: 0 }
-    return [...routes].sort((a, b) => (priority[b.type] ?? 0) - (priority[a.type] ?? 0))[0]
+  const chooseRoute = (verdict: Verdict): VerdictRoute | undefined => {
+    const routes = verdict.routes ?? []
+    // Route on the dimension that actually failed, not on the loudest issue type.
+    const failing = new Set<string>()
+    const dims = verdict.dimensions
+    if (dims) {
+      if (dims.citations < threshold) failing.add('citation')
+      if (dims.coverage < threshold) failing.add('coverage')
+      if (dims.conflicts < threshold) failing.add('conflict')
+    }
+    const pool = failing.size > 0 ? routes.filter((route) => failing.has(route.type)) : routes
+    const priority: Record<string, number> = {
+      conflict: 6,
+      citation: 5,
+      number: 4,
+      coverage: 3,
+      logic: 3,
+      wording: 1,
+      other: 0,
+    }
+    return [...(pool.length > 0 ? pool : routes)].sort((a, b) => (priority[b.type] ?? 0) - (priority[a.type] ?? 0))[0]
   }
 
   const evaluateCondition = (node: GraphNode): { passed: boolean; value: unknown; sourceNodeId: string; path: string } => {
@@ -379,6 +399,7 @@ export async function executeRun(runId: string, runDepth = 0): Promise<void> {
           iteration: state.iteration,
           mode: run.mode,
           memory: recallAgentMemory(agent.id, `${run.input} ${node.data.angle ?? ''}`.trim(), 3),
+          wiki,
         }
 
         if (agent.role === 'analyst' && agent.plugins.includes('cognition.diverge')) {
@@ -421,7 +442,7 @@ export async function executeRun(runId: string, runDepth = 0): Promise<void> {
       if (node.type === 'verifier' && output.verdict) {
         if (!output.verdict.passed && loopCount < maxLoop) {
           const routes = output.verdict.routes ?? []
-          const chosen = chooseRoute(routes)
+          const chosen = chooseRoute(output.verdict)
           const target = chosen && states.has(chosen.target) ? chosen.target : 'writer'
           const nextIteration = loopCount + 1
           const affected = downstreamOf(target)

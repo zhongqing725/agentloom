@@ -120,6 +120,15 @@ export const PLUGINS: PluginDef[] = [
     config: { minScore: 0.6, labelSet: ['支持', '部分支持', '无关', '矛盾'] },
   },
   {
+    id: 'verify.coverage',
+    name: '覆盖与冲突核验',
+    category: '验证',
+    description: '把知识库编译成三页事实卡，检查报告是否漏掉关键事实、是否回避资料之间的分歧。',
+    icon: 'shield-check',
+    color: '#3F7A5E',
+    config: { perAngle: 3, coverageThreshold: 0.8, conflictThreshold: 0.8 },
+  },
+  {
     id: 'tool.browser',
     name: '浏览器抓取',
     category: '工具',
@@ -249,7 +258,7 @@ export const AGENTS: Agent[] = [
     systemPrompt:
       '你是事实核查员。抽取报告中的关键结论和引用，逐条核对证据是否支持结论。输出 JSON：score、passed、claims、issues。',
     tools: [],
-    plugins: ['verify.citations', 'verify.numbers', 'verify.entailment'],
+    plugins: ['verify.citations', 'verify.numbers', 'verify.entailment', 'verify.coverage'],
     sort: 7,
   },
   {
@@ -535,6 +544,26 @@ AI 眼镜的市场空间可以拆成三个变量：出货量 × 平均售价 × 
 
 AI 眼镜正处于“渗透率拐点前”的阶段。2026—2028 年是关键窗口，行业会经历一轮洗牌。投资上，优先关注“单机价值量高、格局集中、毛利率稳定”的光学与芯片环节；整机品牌的机会在于渠道与生态，但需要用退货率和日活证明产品力。`
 
+const brokerDoc = `# 券商深度：AI 眼镜的三条分歧
+
+${DEMO_NOTE}
+
+## 1. 出货量：我们比市场更乐观
+
+我们预计 2028 年全球 AI 眼镜出货量达到 5000 万台，2024—2028 年复合增速约 85%。额外增量主要来自渠道补贴与运营商集采。
+
+## 2. 渗透率：口径差异明显
+
+按我们的口径，2028 年全球 AI 眼镜渗透率约 3.5%。第三方机构给出的数字更低，差异主要来自智能手机出货基数的选择。
+
+## 3. 竞争：Meta 的份额被高估
+
+我们测算 2024 年 Meta 份额约 55%，低于市场普遍引用的 62%。雷朋渠道的增量主要来自欧洲，而非北美。
+
+## 4. 退货率：行业比调研更好
+
+我们跟踪的电商样本显示，2024 年行业平均退货率约 12%，低于第三方调研的 15%。`
+
 export const DOCS: Array<Omit<KnowledgeDoc, 'createdAt' | 'chunkCount'> & { content: string }> = [
   {
     id: 'doc-market',
@@ -583,6 +612,14 @@ export const DOCS: Array<Omit<KnowledgeDoc, 'createdAt' | 'chunkCount'> & { cont
     source: '内部研究框架（模拟整理）',
     tags: ['投资', '估值', '价值池'],
     content: investmentDoc,
+  },
+  {
+    id: 'doc-broker',
+    projectId: PROJECT.id,
+    title: '券商深度：AI 眼镜的三条分歧',
+    source: '券商研报（模拟整理）',
+    tags: ['券商', '预测', '分歧'],
+    content: brokerDoc,
   },
 ]
 

@@ -122,7 +122,7 @@ export interface Usage {
   cost: number
 }
 
-export type IssueType = 'citation' | 'number' | 'logic' | 'coverage' | 'wording' | 'other'
+export type IssueType = 'citation' | 'number' | 'logic' | 'coverage' | 'conflict' | 'wording' | 'other'
 
 export interface VerdictRoute {
   type: IssueType
@@ -147,6 +147,10 @@ export interface Verdict {
     confidence?: number
     checks?: string[]
   }>
+  /** Per-dimension scores; present when verify.coverage is mounted. */
+  dimensions?: { citations: number; coverage: number; conflicts: number }
+  coverage?: CoverageResult
+  conflicts?: ConflictResult
 }
 
 export interface Candidate {
@@ -355,4 +359,108 @@ export interface TrainingVersion {
   note: string
   isActive: boolean
   createdAt: string
+}
+
+/* ---------------------------------------------------------------------------
+ * Wiki layer: rule-compiled fact cards + coverage / conflict verification
+ * ------------------------------------------------------------------------ */
+
+export type WikiAngle = '市场' | '产业链' | '竞争'
+
+export interface WikiSource {
+  docId: string
+  docTitle: string
+  chunkId: string
+  text: string
+}
+
+export interface WikiFact {
+  id: string
+  angle: WikiAngle
+  metric: string
+  subject: string
+  /** Normalized display value: "3200", "25-35", "79.7". */
+  value: string
+  /** Midpoint used for comparison; ranges collapse to their center. */
+  numeric: number
+  unit: string
+  year?: string
+  scenario: boolean
+  sentence: string
+  docId: string
+  docTitle: string
+  chunkId: string
+  salience: number
+}
+
+export interface WikiConflictValue {
+  factId: string
+  value: string
+  docId: string
+  docTitle: string
+  sentence: string
+}
+
+export interface WikiConflict {
+  id: string
+  angle: WikiAngle
+  metric: string
+  subject: string
+  unit: string
+  year?: string
+  values: WikiConflictValue[]
+  /** max/min numeric spread; >= 1.1 is treated as a real disagreement. */
+  spread: number
+}
+
+export interface WikiPage {
+  angle: WikiAngle
+  title: string
+  summary: string
+  facts: WikiFact[]
+  conflicts: WikiConflict[]
+}
+
+export interface WikiSnapshot {
+  pages: WikiPage[]
+  facts: WikiFact[]
+  conflicts: WikiConflict[]
+  compiledAt: string
+}
+
+export interface CoverageItem {
+  factId: string
+  angle: WikiAngle
+  metric: string
+  subject: string
+  value: string
+  unit: string
+  year?: string
+  sentence: string
+  docTitle: string
+  chunkId: string
+}
+
+export interface CoverageResult {
+  required: number
+  covered: number
+  score: number
+  missing: CoverageItem[]
+}
+
+export interface ConflictCheckItem extends WikiConflict {
+  missingValues: string[]
+}
+
+export interface ConflictResult {
+  total: number
+  handled: number
+  score: number
+  unhandled: ConflictCheckItem[]
+}
+
+export interface WikiCheckResult {
+  dimensions: { citations: number; coverage: number; conflicts: number }
+  coverage: CoverageResult
+  conflicts: ConflictResult
 }

@@ -41,6 +41,7 @@ import { executeRun, cancelRun, pauseRun, resumeRun } from './engine.js'
 import { executeTraining } from './trainer.js'
 import { runBus } from './bus.js'
 import { searchKnowledge } from './retrieval.js'
+import { loadWikiSnapshot } from './wiki.js'
 import { mcpStatus, startMcpServers, stopMcpServers } from './mcp.js'
 import { agentCard, handleA2A } from './a2a.js'
 
@@ -95,6 +96,11 @@ app.post('/api/config', async (request) => {
 })
 
 app.get('/api/bootstrap', async () => getBootstrap(resolveMode()))
+
+app.get('/api/wiki', async () => {
+  const bootstrap = getBootstrap(resolveMode())
+  return loadWikiSnapshot(getDb(), bootstrap.project.id)
+})
 
 app.get('/api/workflows', async () => ({ workflows: listWorkflows() }))
 
