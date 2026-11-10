@@ -198,9 +198,10 @@ export default function Home({ onOpenSettings }: { onOpenSettings?: () => void }
       <div className="lm-antigravity" aria-hidden>
         <Antigravity
           colors={['#5227FF', '#FF9FFC', '#B497CF']}
-          count={compact ? 1200 : 3000}
+          count={compact ? 700 : 1600}
           magnetRadius={9}
           ringRadius={7}
+          maxDevicePixelRatio={1.5}
           particleSize={compact ? 0.4 : 0.55}
           particleShape="capsule"
           particleVariance={1}
@@ -255,7 +256,22 @@ export default function Home({ onOpenSettings }: { onOpenSettings?: () => void }
           </div>
           <span className="lm-topbar-spacer" />
           <div className="lm-topbar-nav">
-            <GooeyNav items={navItems} onNavigate={(item) => item.href && navigate(item.href)} initialActiveIndex={0} theme="dark" size="sm" frame particleCount={12} spread={46} animationTime={600} timeVariance={300} gooeyness={0.5} wobble={0.5} hoverEffect />
+            {compact ? (
+              <nav className="lm-mnav" aria-label="主导航">
+                {navItems.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    className="lm-mnav-item"
+                    onClick={() => (item.href.startsWith('#') ? scrollTo(item.href.slice(1)) : navigate(item.href))}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            ) : (
+              <GooeyNav items={navItems} onNavigate={(item) => item.href && navigate(item.href)} initialActiveIndex={0} theme="dark" size="sm" frame particleCount={12} spread={46} animationTime={600} timeVariance={300} gooeyness={0.5} wobble={0.5} hoverEffect />
+            )}
           </div>
           <div className="lm-topbar-tools">
             <button type="button" className="lm-quick" onClick={() => navigate('/knowledge')}>
@@ -579,10 +595,10 @@ export default function Home({ onOpenSettings }: { onOpenSettings?: () => void }
                 tag: doc.tags[0] ?? doc.kind ?? '资料',
                 index: String(index + 1).padStart(2, '0'),
               }))}
-              columns={5}
-              tileWidth={220}
-              tileHeight={150}
-              gap={14}
+              columns={compact ? 3 : 5}
+              tileWidth={compact ? 132 : 220}
+              tileHeight={compact ? 104 : 150}
+              gap={compact ? 10 : 14}
               radius={16}
               tilt={12}
               turn={-10}

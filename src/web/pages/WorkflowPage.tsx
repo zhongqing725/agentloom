@@ -11,6 +11,8 @@ import {
   RiDeleteBin6Line,
   RiDraggable,
   RiErrorWarningLine,
+  RiFlowChart,
+  RiGitBranchLine,
   RiPlayLargeLine,
   RiRobot2Line,
   RiSettings3Line,
@@ -192,6 +194,51 @@ function createsCycle(edges: Graph['edges'], source: string, target: string) {
   return false
 }
 
+type ConditionSpec = NonNullable<GraphNode['data']['condition']>
+
+function ConditionInspector({ node, onSave }: { node: GraphNode; onSave: (condition: ConditionSpec) => void }) {
+  const [path, setPath] = useState(node.data.condition?.path ?? 'verdict.score')
+  const [op, setOp] = useState<ConditionSpec['op']>(node.data.condition?.op ?? 'gte')
+  const [value, setValue] = useState(String(node.data.condition?.value ?? '0.9'))
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 rounded-[12px] bg-background-tertiary-default px-3 py-2">
+        <RiGitBranchLine className="size-4 text-accent-600" aria-hidden />
+        <span className="text-[12px] text-text-secondary">条件来源：{node.data.condition?.sourceNodeId ?? '未设置'}</span>
+      </div>
+      <Input label="读取路径" value={path} onChange={setPath} placeholder="verdict.score" />
+      <div className="grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="t-label">比较</span>
+          <select
+            value={op}
+            onChange={(event) => setOp(event.target.value as ConditionSpec['op'])}
+            className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+          >
+            <option value="gte">≥</option>
+            <option value="lte">≤</option>
+            <option value="eq">=</option>
+          </select>
+        </label>
+        <Input label="目标值" value={value} onChange={setValue} />
+      </div>
+      <Button
+        size="small"
+        onClick={() =>
+          onSave({
+            sourceNodeId: node.data.condition?.sourceNodeId ?? '',
+            path,
+            op,
+            value: op === 'eq' ? value : Number(value),
+          })
+        }
+      >
+        保存条件
+      </Button>
+    </div>
+  )
+}
+
 export default function WorkflowPage() {
   const { data, refresh } = useApp()
   const navigate = useNavigate()
@@ -211,6 +258,20 @@ export default function WorkflowPage() {
   const [existingId, setExistingId] = useState('')
   const [creating, setCreating] = useState(false)
   const [pluginBusy, setPluginBusy] = useState<string | null>(null)
+  const [conditionOpen, setConditionOpen] = useState(false)
+  const [conditionSource, setConditionSource] = useState('verifier')
+  const [conditionTrue, setConditionTrue] = useState('editor')
+  const [conditionFalse, setConditionFalse] = useState('output')
+  const [conditionPath, setConditionPath] = useState('verdict.score')
+  const [conditionOp, setConditionOp] = useState<'gte' | 'lte' | 'eq'>('gte')
+  const [conditionValue, setConditionValue] = useState('0.9')
+  const [subflowOpen, setSubflowOpen] = useState(false)
+  const [subflowSource, setSubflowSource] = useState('input')
+  const [subflowTarget, setSubflowTarget] = useState('planner')
+  const [subflowId, setSubflowId] = useState('workflow-review')
+  const [workflows, setWorkflows] = useState<Array<{ id: string; name: string }>>([
+    { id: 'workflow-review', name: '单角色复核子流程' },
+  ])
   const [notice, setNotice] = useState<Notice | null>(null)
   const noticeTimer = useRef<number | undefined>(undefined)
   const graphBusy = useRef(false)
@@ -606,6 +667,129 @@ export default function WorkflowPage() {
     }
   }
 
+  const addCondition = async () => {
+    if (!conditionSource || !conditionTrue || !conditionFalse) {
+      setError('请选择条件来源、通过分支和未通过分支。')
+      return
+    }
+    if (conditionTrue === conditionFalse) {
+      setError('通过分支和未通过分支不能是同一个节点。')
+      return
+    }
+    const sourceNode = graph.nodes.find((node) => node.id === conditionSource)
+    if (!sourceNode) {
+      setError('条件来源节点不存在。')
+      return
+    }
+    setCreating(true)
+    setError('')
+    try {
+      const conditionId = `condition-${Date.now().toString(36)}`
+      const conditionNode: GraphNode = {
+        id: conditionId,
+        type: 'condition',
+        position: { x: sourceNode.position.x + 210, y: sourceNode.position.y + 120 },
+        data: {
+          label: '条件分支',
+          subtitle: `${conditionPath} ${conditionOp} ${conditionValue}`,
+          kind: 'condition',
+          condition: {
+            sourceNodeId: conditionSource,
+            path: conditionPath,
+            op: conditionOp,
+            value: conditionOp === 'eq' ? conditionValue : Number(conditionValue),
+          },
+        },
+      }
+      // Remove direct bypass edges so the chosen branch actually controls flow.
+      const edges = [
+        ...graph.edges.filter(
+          (edge) =>
+            edge.kind === 'loop' ||
+            !(edge.source === conditionSource && [conditionTrue, conditionFalse].includes(edge.target)),
+        ),
+        { id: `e-${conditionSource}-${conditionId}`, source: conditionSource, target: conditionId, kind: 'flow' as const },
+        { id: `e-${conditionId}-true`, source: conditionId, target: conditionTrue, kind: 'flow' as const, condition: 'true' as const, label: '通过' },
+        { id: `e-${conditionId}-false`, source: conditionId, target: conditionFalse, kind: 'flow' as const, condition: 'false' as const, label: '未通过' },
+      ]
+      if (createsCycle(edges, conditionSource, conditionId)) {
+        setError('这个条件会形成环，请换一个来源或分支目标。')
+        return
+      }
+      const ok = await saveGraph({ nodes: [...graph.nodes, conditionNode], edges })
+      if (!ok) return
+      setSelectedId(conditionId)
+      setConditionOpen(false)
+      notify('已添加条件分支。')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '创建条件失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const saveCondition = async (nodeId: string, condition: ConditionSpec) => {
+    const nodes = graph.nodes.map((node) =>
+      node.id === nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              condition,
+              subtitle: `${condition.path} ${condition.op} ${condition.value}`,
+            },
+          }
+        : node,
+    )
+    const ok = await saveGraph({ nodes, edges: graph.edges })
+    if (ok) notify('条件已更新。')
+  }
+
+  const addSubflow = async () => {
+    if (subflowSource === subflowTarget) {
+      setError('子流程的上下游不能是同一个节点。')
+      return
+    }
+    const edge = graph.edges.find(
+      (item) => item.kind !== 'loop' && item.source === subflowSource && item.target === subflowTarget,
+    )
+    if (!edge) {
+      setError('这两个节点之间没有直接连线，先连线再插入子流程。')
+      return
+    }
+    const source = graph.nodes.find((node) => node.id === subflowSource)
+    if (!source) return
+    setCreating(true)
+    setError('')
+    try {
+      const nodeId = `subflow-${Date.now().toString(36)}`
+      const node: GraphNode = {
+        id: nodeId,
+        type: 'subflow',
+        position: { x: source.position.x + 150, y: source.position.y + 150 },
+        data: { label: '子工作流', subtitle: subflowId, kind: 'subflow', subflowWorkflowId: subflowId },
+      }
+      const edges = [
+        ...graph.edges.filter((item) => item.id !== edge.id),
+        { id: `e-${subflowSource}-${nodeId}`, source: subflowSource, target: nodeId, kind: 'flow' as const },
+        { id: `e-${nodeId}-${subflowTarget}`, source: nodeId, target: subflowTarget, kind: 'flow' as const },
+      ]
+      if (createsCycle(edges, subflowSource, nodeId)) {
+        setError('这个子流程会形成环，请换一条边。')
+        return
+      }
+      const ok = await saveGraph({ nodes: [...graph.nodes, node], edges })
+      if (!ok) return
+      setSelectedId(nodeId)
+      setSubflowOpen(false)
+      notify('已插入子流程节点。')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '创建子流程失败')
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
     <div className="app-page">
       <div className="page-particles" aria-hidden>
@@ -638,6 +822,28 @@ export default function WorkflowPage() {
         actions={
           <>
             <Button variant="secondary" className="lm-cta-secondary" leadingIcon={RiAddLine} onClick={openAdd}>添加 Agent</Button>
+            <Button
+              variant="ghost"
+              className="lm-cta-secondary"
+              leadingIcon={RiGitBranchLine}
+              onClick={() => {
+                setConditionSource(selectedId && graph.nodes.some((node) => node.id === selectedId) ? selectedId : 'verifier')
+                setConditionOpen(true)
+              }}
+            >
+              条件分支
+            </Button>
+            <Button
+              variant="ghost"
+              className="lm-cta-secondary"
+              leadingIcon={RiFlowChart}
+              onClick={() => {
+                void api.workflows().then((result) => setWorkflows(result.workflows)).catch(() => undefined)
+                setSubflowOpen(true)
+              }}
+            >
+              子流程
+            </Button>
             <Button variant="ghost" className="lm-cta-secondary" leadingIcon={RiSettings3Line} onClick={() => setSettingsOpen(true)}>调度设置</Button>
             <Button className="lm-cta-primary" leadingIcon={RiPlayLargeLine} onClick={() => setRunOpen(true)}>运行此流程</Button>
           </>
@@ -725,7 +931,11 @@ export default function WorkflowPage() {
               <IconButton icon={RiCloseLine} size="small" aria-label="关闭节点配置" onClick={() => setSelectedId(null)} />
             </div>
 
-            {selectedAgent ? (
+            {selectedNode.type === 'condition' ? (
+              <div className="mt-4">
+                <ConditionInspector node={selectedNode} onSave={(condition) => void saveCondition(selectedNode.id, condition)} />
+              </div>
+            ) : selectedAgent ? (
               <>
                 <div className="mt-4 flex items-center gap-3 rounded-[14px] bg-background-tertiary-default p-3">
                   <span className="grid size-9 place-items-center rounded-[10px] bg-background-primary-default text-accent-600">
@@ -844,6 +1054,131 @@ export default function WorkflowPage() {
           </Surface>
         )}
       </div>
+
+      <Modal
+        open={subflowOpen}
+        onClose={() => setSubflowOpen(false)}
+        title="插入子流程"
+        subtitle="把一条已有连线替换为子流程节点：上游 → 子流程 → 下游。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSubflowOpen(false)}>取消</Button>
+            <Button onClick={() => void addSubflow()} disabled={creating}>{creating ? '插入中…' : '插入子流程'}</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="t-label">上游节点</span>
+            <select
+              value={subflowSource}
+              onChange={(event) => setSubflowSource(event.target.value)}
+              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              {graph.nodes.map((node) => (
+                <option key={node.id} value={node.id}>{node.data.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="t-label">下游节点（必须与上游已有连线）</span>
+            <select
+              value={subflowTarget}
+              onChange={(event) => setSubflowTarget(event.target.value)}
+              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              {[...new Set(graph.edges.filter((edge) => edge.kind !== 'loop' && edge.source === subflowSource).map((edge) => edge.target))].map((target) => (
+                <option key={target} value={target}>{nodeLabel(target)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="t-label">子流程模板</span>
+            <select
+              value={subflowId}
+              onChange={(event) => setSubflowId(event.target.value)}
+              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              {workflows.map((workflow) => (
+                <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
+              ))}
+            </select>
+          </label>
+          {error && <p className="text-[12px] text-status-rose-text">{error}</p>}
+        </div>
+      </Modal>
+
+      <Modal
+        open={conditionOpen}
+        onClose={() => setConditionOpen(false)}
+        title="添加条件分支"
+        subtitle="条件节点读取上游输出路径，通过/未通过两条边只会走其中一条。"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConditionOpen(false)}>取消</Button>
+            <Button onClick={() => void addCondition()} disabled={creating}>{creating ? '创建中…' : '创建条件'}</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="t-label">条件来源节点</span>
+            <select
+              value={conditionSource}
+              onChange={(event) => setConditionSource(event.target.value)}
+              className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+            >
+              {graph.nodes.map((node) => (
+                <option key={node.id} value={node.id}>{node.data.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Input label="读取路径" value={conditionPath} onChange={setConditionPath} placeholder="verdict.score" />
+            <label className="flex flex-col gap-1.5">
+              <span className="t-label">比较</span>
+              <select
+                value={conditionOp}
+                onChange={(event) => setConditionOp(event.target.value as 'gte' | 'lte' | 'eq')}
+                className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                <option value="gte">≥</option>
+                <option value="lte">≤</option>
+                <option value="eq">=</option>
+              </select>
+            </label>
+            <Input label="目标值" value={conditionValue} onChange={setConditionValue} placeholder="0.9" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="t-label">通过（true）去往</span>
+              <select
+                value={conditionTrue}
+                onChange={(event) => setConditionTrue(event.target.value)}
+                className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                {graph.nodes.map((node) => (
+                  <option key={node.id} value={node.id}>{node.data.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="t-label">未通过（false）去往</span>
+              <select
+                value={conditionFalse}
+                onChange={(event) => setConditionFalse(event.target.value)}
+                className="h-9 w-full rounded-2lg border border-border-button-default bg-background-tertiary-default px-3 text-[13px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+              >
+                {graph.nodes.map((node) => (
+                  <option key={node.id} value={node.id}>{node.data.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="t-meta">路径示例：`verdict.score`、`data.confidence`、`text`。数值比较用 ≥/≤，字符串比较用 =。</p>
+          {error && <p className="text-[12px] text-status-rose-text">{error}</p>}
+        </div>
+      </Modal>
 
       <Modal
         open={runOpen}

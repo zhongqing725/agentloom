@@ -34,6 +34,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   bootstrap: () => request<Bootstrap>('/api/bootstrap'),
+  workflows: () => request<{ workflows: Workflow[] }>('/api/workflows'),
   config: () => request<{ mode: 'mock' | 'live'; model: string; baseUrl: string; hasKey: boolean }>('/api/config'),
   setConfig: (input: { apiKey?: string; baseUrl?: string; model?: string; mode?: 'mock' | 'live' }) =>
     request<{ mode: 'mock' | 'live'; model: string; baseUrl: string; hasKey: boolean }>('/api/config', {
@@ -67,13 +68,32 @@ export const api = {
   }) => request<{ agent: Agent }>('/api/agents', { method: 'POST', body: JSON.stringify(input) }),
   updateAgent: (id: string, patch: Partial<Agent>) =>
     request<{ agent: Agent }>(`/api/agents/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  agentMemory: (id: string) =>
+    request<{ memory: Array<{ id: string; text: string; createdAt: string; runId: string; nodeId: string }> }>(
+      `/api/agents/${id}/memory`,
+    ),
+  addAgentMemory: (id: string, text: string) =>
+    request<{ memory: Array<{ id: string; text: string; createdAt: string }> }>(`/api/agents/${id}/memory`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  clearAgentMemory: (id: string) =>
+    request<{ cleared: number }>(`/api/agents/${id}/memory`, { method: 'DELETE' }),
   updateWorkflow: (patch: { graph?: Workflow['graph']; settings?: Workflow['settings']; name?: string }) =>
     request<{ workflow: Workflow }>('/api/workflow', { method: 'PUT', body: JSON.stringify(patch) }),
   runs: (limit = 30) => request<{ runs: Run[] }>(`/api/runs?limit=${limit}`),
   createRun: (input: string) =>
     request<{ run: Run }>('/api/runs', { method: 'POST', body: JSON.stringify({ input }) }),
   getRun: (id: string) => request<RunDetail>(`/api/runs/${id}`),
-  cancelRun: (id: string) => request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: 'POST' }),
+  cancelRun: (id: string) => request<{ ok: boolean }>(`/api/runs/${id}/cancel`, { method: 'POST', body: JSON.stringify({}) }),
+  pauseRun: (id: string) =>
+    request<{ ok: boolean; paused: boolean }>(`/api/runs/${id}/pause`, { method: 'POST', body: JSON.stringify({}) }),
+  resumeRun: (id: string) =>
+    request<{ ok: boolean; paused: boolean }>(`/api/runs/${id}/resume`, { method: 'POST', body: JSON.stringify({}) }),
+  checkpoints: (id: string) =>
+    request<{ checkpoints: Array<{ id: string; nodeId: string; createdAt: string; state: Record<string, unknown> }> }>(
+      `/api/runs/${id}/checkpoints`,
+    ),
   training: (agentId: string) =>
     request<{ cases: EvalCase[]; versions: TrainingVersion[]; runs: TrainingRun[] }>(
       `/api/training?agentId=${encodeURIComponent(agentId)}`,

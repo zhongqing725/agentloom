@@ -293,7 +293,7 @@ export function startOrbit(canvas: HTMLCanvasElement, options: OrbitOptions = {}
       const height = canvas.clientHeight || 533
       const rect = canvas.getBoundingClientRect()
       const stageScale = rect.width ? rect.width / width : 1
-      const dpr = Math.min((window.devicePixelRatio || 1) * stageScale, 2.5)
+      const dpr = Math.min((window.devicePixelRatio || 1) * stageScale, 1.75)
       renderer.setPixelRatio(dpr)
       renderer.setSize(width, height, false)
 

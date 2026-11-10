@@ -387,7 +387,11 @@ const createEngine = (root, config, setAspect) => {
       if (Math.abs(st.glide) < 0.0004) st.glide = 0;
       busy = true;
     }
-    render(now);
+    // 六个玻璃 tile 每帧重绘太贵；轨道转到 30fps 肉眼看不出差别。
+    if (st.drag?.active || now - (st.lastPaint || 0) >= 33) {
+      st.lastPaint = now;
+      render(now);
+    }
     const whole = Math.floor(st.lap);
     if (whole) st.lap -= whole;
     if (!st.drag && !st.seek) st.manual -= Math.floor(st.manual);

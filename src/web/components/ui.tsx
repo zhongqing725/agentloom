@@ -81,7 +81,7 @@ export function PageHeader({
         <h1 className="text-[19px] font-semibold leading-tight tracking-[-0.022em] text-text-primary">{title}</h1>
         {meta && <div className="t-meta mt-1">{meta}</div>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex min-w-0 flex-wrap items-center gap-2">{actions}</div>}
     </header>
   )
 }

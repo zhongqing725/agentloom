@@ -170,7 +170,10 @@ function Root() {
 
   return (
     <>
-      <Home onOpenSettings={() => setSettingsOpen(true)} />
+      {/* 面板打开时把首页移出渲染树：IntersectionObserver 全部失配，粒子/轨道/文字压力自动停摆。 */}
+      <div className={overlay ? 'lm-home is-behind' : 'lm-home'}>
+        <Home onOpenSettings={() => setSettingsOpen(true)} />
+      </div>
 
       <div className={cx('loom-overlay', overlay && 'is-open')} aria-hidden={!overlay}>
         <div className="loom-overlay-panel" role="dialog" aria-modal={overlay} aria-label={title}>

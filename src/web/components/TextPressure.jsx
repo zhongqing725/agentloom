@@ -215,8 +215,29 @@ const TextPressure = ({
     const applied = [];
     let rafId = 0;
     let last = 0;
+    let lastPaint = 0;
     let idleFrames = 0;
     let clock = 0;
+
+    // 每帧给 30 个字量 rect 会把主线程钉死在 layout 上（实测占一半 CPU）。
+    // 几何只在尺寸/滚动变化时重算，指针动画期间直接复用。
+    let measures = null;
+    const measure = () => {
+      const titleRect = title.getBoundingClientRect();
+      const box = container.getBoundingClientRect();
+      const centers = spansRef.current.map(span => {
+        if (!span) return null;
+        const rect = span.getBoundingClientRect();
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      });
+      measures = { titleRect, box, centers };
+      return measures;
+    };
+    const invalidate = () => {
+      measures = null;
+    };
+    window.addEventListener('resize', invalidate);
+    window.addEventListener('scroll', invalidate, { passive: true, capture: true });
     let engage = optionsRef.current.idle === 'wave' || optionsRef.current.idle === 'pulse' ? 0 : 1;
 
     const tick = now => {
@@ -236,7 +257,7 @@ const TextPressure = ({
 
       let present = 1;
       if (idleMode !== 'none') {
-        const box = container.getBoundingClientRect();
+        const { box } = measures ?? measure();
         const inside = cursor.x >= box.left && cursor.x <= box.right && cursor.y >= box.top && cursor.y <= box.bottom;
         present = cursor.seen && inside ? 1 : 0;
       }
@@ -245,18 +266,21 @@ const TextPressure = ({
       const idling = idleMode !== 'none' && engage < 1;
       if (idling) clock += (elapsed / 1000) * options.idleSpeed;
 
+      // 呼吸波是装饰，24fps 已经看不出锯齿；指针交互仍走满帧。
+      const pointerMoving = Math.abs(cursor.x - mouse.x) > 0.1 || Math.abs(cursor.y - mouse.y) > 0.1;
+      if (idling && !pointerMoving && now - lastPaint < 1000 / 8) {
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
+      lastPaint = now;
+
       const ripples = ripplesRef.current;
       while (ripples.length && now - ripples[0].start > RIPPLE_LIFE * 1000) ripples.shift();
 
-      const titleRect = title.getBoundingClientRect();
+      const { titleRect, centers } = measures ?? measure();
       const maxDist = Math.max(titleRect.width * options.radius, 1);
       const spread = Math.max(options.radius * 2, 0.2);
       const spans = spansRef.current;
-      const centers = spans.map(span => {
-        if (!span) return null;
-        const rect = span.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-      });
 
       let changed = false;
       spans.forEach((span, i) => {
@@ -274,7 +298,8 @@ const TextPressure = ({
           pressure = 1 - (1 - pressure) * (1 - swell);
         }
 
-        const wdth = options.width ? Math.floor(5 + 200 * pressure) : 100;
+        // 呼吸波只动字重：改 wdth 会改每个字的度量，等于每帧让整行重排。
+        const wdth = options.width && !idling ? Math.floor(5 + 200 * pressure) : 100;
         const wght = options.weight ? Math.floor(100 + 900 * pressure) : 400;
         const italVal = options.italic ? pressure.toFixed(2) : '0';
         const alphaVal = options.alpha ? pressure.toFixed(2) : '';
@@ -305,7 +330,10 @@ const TextPressure = ({
       idleFrames = animating ? 0 : idleFrames + 1;
 
       if (animating || (changed && idleFrames < 60)) rafId = requestAnimationFrame(tick);
-      else last = 0;
+      else {
+        last = 0;
+        measures = null;
+      }
     };
 
     const wake = () => {
@@ -317,6 +345,8 @@ const TextPressure = ({
 
     return () => {
       cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', invalidate);
+      window.removeEventListener('scroll', invalidate, { capture: true });
       wakeRef.current = null;
     };
   }, []);

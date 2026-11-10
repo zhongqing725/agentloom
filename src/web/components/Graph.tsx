@@ -23,6 +23,8 @@ import '@xyflow/react/dist/style.css'
 import {
   RiCloseLine,
   RiFileTextLine,
+  RiFlowChart,
+  RiGitBranchLine,
   RiLoader4Line,
   RiPlayLargeLine,
   RiPlugLine,
@@ -59,6 +61,8 @@ const KIND_LABEL: Record<string, string> = {
   agent: 'AGENT',
   verifier: 'VERIFIER',
   output: 'OUTPUT',
+  condition: 'CONDITION',
+  subflow: 'SUBFLOW',
 }
 
 function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
@@ -71,7 +75,11 @@ function LoomNode({ data, selected }: NodeProps<Node<FlowNodeData>>) {
         ? RiFileTextLine
         : data.kind === 'verifier'
           ? RiShieldCheckLine
-          : RiRobot2Line
+          : data.kind === 'condition'
+            ? RiGitBranchLine
+            : data.kind === 'subflow'
+              ? RiFlowChart
+              : RiRobot2Line
   const acceptsPlugin = Boolean(data.droppable)
   const running = status === 'running' || status === 'queued'
 

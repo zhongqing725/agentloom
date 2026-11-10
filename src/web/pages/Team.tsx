@@ -3,6 +3,7 @@ import {
   RiArrowRightSLine,
   RiBrainLine,
   RiGitBranchLine,
+  RiHistoryLine,
   RiSparklingLine,
   RiToolsLine,
 } from '@remixicon/react'
@@ -36,6 +37,8 @@ export default function Team() {
   const [draft, setDraft] = useState<Agent | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [memory, setMemory] = useState<Array<{ id: string; text: string; createdAt: string }>>([])
+  const [memoryText, setMemoryText] = useState('')
 
   if (!data) return null
 
@@ -43,6 +46,30 @@ export default function Team() {
     setSelected(agent)
     setDraft({ ...agent, plugins: [...agent.plugins] })
     setError('')
+    setMemory([])
+    setMemoryText('')
+    void api.agentMemory(agent.id).then((result) => setMemory(result.memory.slice(0, 5))).catch(() => undefined)
+  }
+
+  const addMemory = async () => {
+    if (!selected || !memoryText.trim()) return
+    try {
+      const result = await api.addAgentMemory(selected.id, memoryText.trim())
+      setMemory(result.memory.slice(0, 5))
+      setMemoryText('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '记忆写入失败')
+    }
+  }
+
+  const clearMemory = async () => {
+    if (!selected) return
+    try {
+      await api.clearAgentMemory(selected.id)
+      setMemory([])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '记忆清空失败')
+    }
   }
 
   const save = async () => {
@@ -57,6 +84,7 @@ export default function Team() {
         plugins: draft.plugins,
         tools: draft.plugins.filter((id) => TOOL_PLUGIN_IDS.includes(id)),
         title: draft.title,
+        capacity: Math.max(1, Number(draft.capacity ?? 1)),
       })
       await refresh()
       setSelected(null)
@@ -198,6 +226,12 @@ export default function Team() {
                   value={String(draft.temperature)}
                   onChange={(value) => setDraft({ ...draft, temperature: Math.max(0, Math.min(1, Number(value))) })}
                 />
+                <Input
+                  label="并发容量"
+                  type="number"
+                  value={String(draft.capacity ?? 1)}
+                  onChange={(value) => setDraft({ ...draft, capacity: Math.max(1, Math.min(8, Number(value))) })}
+                />
               </div>
             </div>
 
@@ -218,6 +252,41 @@ export default function Team() {
                     onChange={() => togglePlugin(plugin.id)}
                   />
                 ))}
+              </div>
+              <div className="mt-3 rounded-[14px] border border-border-button-default p-3">
+                <div className="flex items-center gap-2">
+                  <RiHistoryLine className="size-3.5 text-accent-500" aria-hidden />
+                  <span className="text-[12px] font-medium text-text-primary">短期记忆</span>
+                  <span className="ms-auto text-[10px] text-text-placeholder">{memory.length}/5</span>
+                </div>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {memory.length === 0 ? (
+                    <p className="text-[10.5px] leading-relaxed text-text-tertiary">还没有记忆。运行一次或手动写入一条，下次会注入上下文。</p>
+                  ) : (
+                    memory.map((item) => (
+                      <p key={item.id} className="line-clamp-2 text-[10.5px] leading-relaxed text-text-secondary">
+                        · {item.text}
+                      </p>
+                    ))
+                  )}
+                </div>
+                <div className="mt-2 flex gap-1.5">
+                  <Input
+                    aria-label="写入短期记忆"
+                    value={memoryText}
+                    onChange={setMemoryText}
+                    placeholder="例如：优先关注光学与低功耗 SoC"
+                    className="min-w-0 flex-1"
+                  />
+                  <Button size="xs" variant="secondary" onClick={() => void addMemory()} disabled={!memoryText.trim()}>
+                    写入
+                  </Button>
+                </div>
+                {memory.length > 0 && (
+                  <button type="button" className="link mt-2 text-[10px]" onClick={() => void clearMemory()}>
+                    清空记忆
+                  </button>
+                )}
               </div>
               <div className="mt-2 flex gap-2 rounded-[14px] bg-background-secondary-default p-3 text-[11px] leading-relaxed text-text-tertiary">
                 <RiSparklingLine className="mt-0.5 size-3.5 shrink-0 text-accent-500" aria-hidden />

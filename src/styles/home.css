@@ -1303,6 +1303,16 @@
   transform: none;
 }
 
+/* Closed overlay is still in the DOM for the slide transition. Hide it fully:
+   opacity:0 alone can leave a backdrop-filter / gradient rectangle on some
+   mobile browsers, which reads as an unloaded white card. */
+.loom-overlay:not(.is-open) .loom-overlay-panel {
+  visibility: hidden;
+  pointer-events: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .loom-overlay-bar {
   display: flex;
   align-items: center;
@@ -1796,5 +1806,123 @@ html.dark .loom-overlay-title {
 @media (max-width: 640px) {
   .lm-shell {
     width: calc(100% - 28px);
+  }
+}
+
+/* ===========================================================================
+   性能 + 手机适配（2026-11）
+   =========================================================================== */
+
+/* 面板打开时首页整块不渲染（App.tsx 加 is-behind）。 */
+.lm-home.is-behind {
+  display: none;
+}
+
+/* 文字的变形呼吸每帧都在改整行排版，把重排关在这个元素内部。 */
+.text-pressure-title {
+  contain: layout style paint;
+}
+
+/* 窄屏导航：GooeyNav 的画布在换行时会撑成一条白带，这里换成纯文字行。 */
+.lm-mnav {
+  display: flex;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.05);
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.lm-mnav::-webkit-scrollbar {
+  display: none;
+}
+
+.lm-mnav-item {
+  flex: none;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: rgb(255 255 255 / 0.66);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lm-mnav-item:active {
+  color: #fff;
+  background: rgb(255 255 255 / 0.12);
+}
+
+@media (max-width: 860px) {
+  .lm-topbar {
+    row-gap: 8px;
+  }
+
+  .lm-topbar-nav {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  /* 首屏标题按视口缩，别再靠 30 个字的 nowrap 硬撑。 */
+  .lm-hero-pressure .text-pressure-title {
+    font-size: clamp(15px, 4.7vw, 26px) !important;
+  }
+
+  .lm-hero-sub {
+    padding-inline: 8px;
+    font-size: 12.5px;
+  }
+
+  /* 资料墙：三列已经够读，五列只会切出碎片。 */
+  .lm-wall-frame {
+    height: 420px;
+    border-radius: 20px;
+  }
+
+  .lm-section-head h2 {
+    font-size: clamp(21px, 6vw, 28px);
+  }
+
+  /* CTA 带原本被 overflow:hidden 切掉一截。 */
+  .lm-band > div:first-child {
+    min-width: 0;
+  }
+
+  .lm-band h2 {
+    font-size: clamp(19px, 5.4vw, 26px);
+    line-height: 1.25;
+  }
+
+  .lm-quick {
+    display: none;
+  }
+
+  .loom-overlay-body .glass {
+    min-width: 0;
+  }
+
+  .bui-table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  /* 每层 backdrop-filter 都是一次离屏模糊，几十层叠起来会把 iOS 的内存顶爆
+     （表现为白块、返回时闪退）。手机端只保留底色。 */
+  .lm-glass,
+  .lm-glass *,
+  .glass,
+  .glass *,
+  .loom-overlay-panel,
+  .gooey-nav--framed,
+  .glass-icon-glass {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }

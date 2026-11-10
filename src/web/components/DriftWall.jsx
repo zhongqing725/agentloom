@@ -119,7 +119,23 @@ const DriftWall = ({
   );
 
   useEffect(() => {
+    // 这面墙在首屏之外，离屏时继续推 1000+ 个 transform 是纯烧电。
+    const container = containerRef.current;
+    let visible = true;
+    const io =
+      container && typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(([entry]) => {
+            visible = entry.isIntersecting;
+          }, { rootMargin: '160px' })
+        : null;
+    io?.observe(container);
+
     const animate = ts => {
+      if (!visible || document.hidden) {
+        lastTsRef.current = null;
+        rafRef.current = requestAnimationFrame(animate);
+        return;
+      }
       if (lastTsRef.current === null) lastTsRef.current = ts;
       const dt = Math.min(0.05, Math.max(0, ts - lastTsRef.current) / 1000);
       lastTsRef.current = ts;
@@ -162,6 +178,7 @@ const DriftWall = ({
 
     rafRef.current = requestAnimationFrame(animate);
     return () => {
+      io?.disconnect();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       lastTsRef.current = null;

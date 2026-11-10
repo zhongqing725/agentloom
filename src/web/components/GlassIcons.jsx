@@ -487,7 +487,10 @@ const GlassIcons = ({
     const layout = { width: 1, height: 1, margin: 0, dpr: 1, centers: [] };
     const paint = document.createElement('canvas');
     const paintContext = paint.getContext('2d');
-    let gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false });
+    // 手机端 WebGL 上下文有硬配额（iOS 约 8 个），七个玻璃 tile 会把轨道和粒子挤掉，
+    // 表现为 tile 变白、返回时整页崩掉。窄屏直接走 SVG/CSS 玻璃，56px 上肉眼没差别。
+    const smallViewport = window.matchMedia?.('(max-width: 860px)').matches ?? false;
+    let gl = smallViewport ? null : canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false });
     let program = null;
     let buffer = null;
     let texture = null;
@@ -602,7 +605,7 @@ const GlassIcons = ({
       layout.margin = margin;
       layout.width = Math.max(1, root.clientWidth + margin * 2);
       layout.height = Math.max(1, root.clientHeight + margin * 2);
-      layout.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      layout.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.style.left = `${-margin}px`;
       canvas.style.top = `${-margin}px`;
       canvas.style.width = `${layout.width}px`;

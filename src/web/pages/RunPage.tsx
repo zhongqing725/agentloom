@@ -11,6 +11,7 @@ import {
   RiFileTextLine,
   RiGitBranchLine,
   RiPauseLine,
+  RiPlayLine,
   RiRefreshLine,
   RiShieldCheckLine,
   RiSignalWifiOffLine,
@@ -100,6 +101,7 @@ export default function RunPage() {
   const [selectedClaim, setSelectedClaim] = useState(0)
   const [copied, setCopied] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [liveState, setLiveState] = useState<'connecting' | 'live' | 'reconnecting' | 'closed'>('connecting')
   const [now, setNow] = useState(() => Date.now())
@@ -347,6 +349,17 @@ export default function RunPage() {
     }
   }
 
+  const togglePause = async () => {
+    if (!id) return
+    if (paused) {
+      await api.resumeRun(id)
+      setPaused(false)
+    } else {
+      await api.pauseRun(id)
+      setPaused(true)
+    }
+  }
+
   const tabCount: Record<RunTab, number | undefined> = {
     graph: detail.nodes.length,
     report: undefined,
@@ -395,9 +408,14 @@ export default function RunPage() {
             </span>
             <span className="flex items-center gap-1.5">
               {running ? (
-                <Button variant="secondary" size="small" leadingIcon={RiPauseLine} onClick={() => void cancel()} disabled={cancelling}>
-                  {cancelling ? '取消中…' : '取消'}
-                </Button>
+                <>
+                  <Button variant="secondary" size="small" leadingIcon={paused ? RiPlayLine : RiPauseLine} onClick={() => void togglePause()}>
+                    {paused ? '继续' : '暂停'}
+                  </Button>
+                  <Button variant="secondary" size="small" leadingIcon={RiPauseLine} onClick={() => void cancel()} disabled={cancelling}>
+                    {cancelling ? '取消中…' : '取消'}
+                  </Button>
+                </>
               ) : (
                 <Button variant="secondary" size="small" leadingIcon={RiRefreshLine} onClick={() => navigate('/workflow')}>
                   再运行
